@@ -5,11 +5,6 @@ import cv2
 
 from utils.metrics import Evaluator
 
-def _set_quantize_mode(net, quantize_output, quantize_para):
-	for module in net.modules():
-		if hasattr(module, 'set_quantize_mode'):
-			module.set_quantize_mode(quantize_output=quantize_output, quantize_para=quantize_para)
-
 
 def visualize_per_layer(param, title='test'):
     import matplotlib.pyplot as plt
