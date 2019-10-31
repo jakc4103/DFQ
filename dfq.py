@@ -16,11 +16,11 @@ def _layer_equalization(weight_first, weight_second, bias_first, s_range=(1e-8, 
     # pdb.set_trace()
     for g in range(num_group):
         c_start_i = g * group_channels_i
-        c_end_i = (g+1) * group_channels_i
+        c_end_i = (g + 1) * group_channels_i
         weight_first_group = weight_first[c_start_i:c_end_i] # shape [k, c, h, w]
 
         c_start_o = g * group_channels_o
-        c_end_o = (g+1) * group_channels_o
+        c_end_o = (g + 1) * group_channels_o
         weight_second_group = weight_second[c_start_o:c_end_o]
 
         for ii in range(weight_second_group.shape[1]):
@@ -54,11 +54,8 @@ def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thr
             for rr in relations:
                 layer_first, layer_second = rr.get_idxs()
                 
-                # 17-20, 36-39, 65-68, 104-107, 133-136, 162-164
-                # if '17' in layer_first or '36' in layer_first or '65' in layer_first or '104' in layer_first or '133' in layer_first or '162' in layer_first:
-                #     continue
-                
                 if visualize_state:
+                    # print(torch.max(graph[layer_first].weight.detach()), torch.min(graph[layer_first].weight.detach()), 'before equal')
                     visualize_per_layer(graph[layer_first].weight.detach(), 'Before equalization')
 
                 if graph[layer_first].bias is None: # add a fake bias term
@@ -71,6 +68,7 @@ def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thr
                                         graph[layer_first].bias, s_range=s_range, signed=signed, eps=eps)
                 
                 if visualize_state:
+                    # print(torch.max(graph[layer_first].weight.detach()), torch.min(graph[layer_first].weight.detach()), 'after equal')
                     visualize_per_layer(graph[layer_first].weight.detach(), 'After equalization')
 
             diff_tmp = 0
@@ -79,6 +77,6 @@ def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thr
                     diff_tmp += torch.mean(torch.abs(graph[layer_idx].weight - state_prev[layer_idx].weight))
             
             diff = min(diff, diff_tmp)
-            print('diff', diff)
+            # print('diff', diff)
     
     # return graph
