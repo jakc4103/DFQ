@@ -21,30 +21,6 @@ def visualize_per_layer(param, title='test'):
     plt.show()
 
 
-def forward(net, img, quant=False, title='test', wait_time=0, cal_=False):
-	img = img#.cuda()
-	if cal_:
-		inf_sum = 0
-		nan_sum = 0
-		for param in net.parameters():
-			inf_sum += torch.sum(torch.isinf(param))
-			nan_sum += torch.sum(torch.isnan(param))
-
-		print('num_inf', inf_sum, 'num_nan', nan_sum)
-	
-	_set_quantize_mode(net, quant, quant)
-
-	activations = net(img)
-
-	logits = activations[list(activations.keys())[-1]] if type(activations) != torch.Tensor else activations
-	pred = torch.max(logits, 1)[1].cpu().numpy().astype(np.uint8)[0]
-
-	pred[pred > 0] = 255
-
-	cv2.imshow(title, pred)
-	cv2.waitKey(wait_time)
-
-
 def forward_all(net_inference, dataloader, visualize=False):
     evaluator = Evaluator(21)
     evaluator.reset()
