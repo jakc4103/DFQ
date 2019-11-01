@@ -49,6 +49,7 @@ def _layer_equalization(weight_first, weight_second, bias_first, s_range=(1e-8, 
 def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thres=1, signed=False, eps=0, visualize_state=False):
     with torch.no_grad():
         diff = 10
+        conv_type = type(graph[relations[0].get_idxs()[0]])
         while diff > converge_thres:
             state_prev = copy.deepcopy(graph)
             for rr in relations:
@@ -73,10 +74,10 @@ def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thr
 
             diff_tmp = 0
             for layer_idx in graph:
-                if type(graph[layer_idx]) == QConv2d:
+                if type(graph[layer_idx]) == conv_type:
                     diff_tmp += torch.mean(torch.abs(graph[layer_idx].weight - state_prev[layer_idx].weight))
             
             diff = min(diff, diff_tmp)
-            # print('diff', diff)
+            print('diff', diff)
     
     # return graph
