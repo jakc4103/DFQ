@@ -16,9 +16,9 @@ def ___add__(input, *args):
     _stack = inspect.stack()
 
     if '{}_{}'.format(_stack[1][0].f_locals['self'].__class__.__name__, _stack[1].lineno) == name_tensor_op[idx_tensor_op_quantize]:
-        input = _stack[8][0].f_locals['self']._modules['custom_tensor_op'](input, idx_tensor_op_quantize)
-        args = [_stack[8][0].f_locals['self']._modules['custom_tensor_op'](args[0], idx_tensor_op_quantize + 1)]
-        idx_tensor_op_quantize += 2
+        input = _stack[8][0].f_locals['self']._modules['custom_tensor_op'](input, idx_tensor_op_quantize*2)
+        args = [_stack[8][0].f_locals['self']._modules['custom_tensor_op'](args[0], idx_tensor_op_quantize*2 + 1)]
+        idx_tensor_op_quantize += 1
         idx_tensor_op_quantize %= len(name_tensor_op)
 
     x = raw_tensor_magic_op['__add__'](input, *args)
@@ -33,9 +33,9 @@ def ___iadd__(input, *args):
     _stack = inspect.stack()
 
     if '{}_{}'.format(_stack[1][0].f_locals['self'].__class__.__name__, _stack[1].lineno) == name_tensor_op[idx_tensor_op_quantize]:
-        input = _stack[8][0].f_locals['self']._modules['custom_tensor_op'](input, idx_tensor_op_quantize)
-        args = [_stack[8][0].f_locals['self']._modules['custom_tensor_op'](args[0], idx_tensor_op_quantize + 1)]
-        idx_tensor_op_quantize += 2
+        input = _stack[8][0].f_locals['self']._modules['custom_tensor_op'](input, idx_tensor_op_quantize*2)
+        args = [_stack[8][0].f_locals['self']._modules['custom_tensor_op'](args[0], idx_tensor_op_quantize*2 + 1)]
+        idx_tensor_op_quantize += 1
         idx_tensor_op_quantize %= len(name_tensor_op)
 
     x = raw_tensor_magic_op['__add__'](input, *args)
@@ -103,7 +103,7 @@ def switch_layers(model, transformer, data):
     return model
 
 
-def merge_batchnorm(model, graph, bottoms):
+def merge_batchnorm(model, graph, bottoms, conv_type=QConv2d):
     with torch.no_grad():
         # merge bn params into QConv2d
         for layer_idx in graph:
@@ -111,7 +111,7 @@ def merge_batchnorm(model, graph, bottoms):
             if bottoms[layer_idx] is None:
                 continue
             for bot_idx in bottoms[layer_idx]:
-                if type(graph[layer_idx]) == nn.BatchNorm2d and type(graph[bot_idx]) == QConv2d:
+                if type(graph[layer_idx]) == nn.BatchNorm2d and type(graph[bot_idx]) == conv_type:
                     # TODO: suppport gpu version
                     conv_weight = graph[bot_idx].weight.detach()
                     bn_weight = graph[layer_idx].weight.detach()
@@ -135,6 +135,7 @@ def merge_batchnorm(model, graph, bottoms):
                     graph[layer_idx].bias.fill_(0)
                     graph[layer_idx].running_mean.fill_(0)
                     graph[layer_idx].eps = 0
+                    # print(graph[layer_idx].running_var)
 
                     break
 
