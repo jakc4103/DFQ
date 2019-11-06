@@ -4,7 +4,7 @@ import copy
 from utils.utils import visualize_per_layer
 from PyTransformer.transformers.quantize import QConv2d
 
-def _layer_equalization(weight_first, weight_second, bias_first, s_range=(1e-8, 1e8), signed=False, eps=0):
+def _layer_equalization(weight_first, weight_second, bias_first, bn_weight=None, bn_bias=None, s_range=(1e-8, 1e8), signed=False, eps=0):
     num_group = 1
     if weight_first.shape[0] != weight_second.shape[1]:
         # group convolution
@@ -37,6 +37,12 @@ def _layer_equalization(weight_first, weight_second, bias_first, s_range=(1e-8, 
             s = max(s_range[0], min(s_range[1], s))
 
             weight_first[c_start_i + ii].mul_(s)
+            
+            if bn_weight is not None:
+                bn_weight[c_start_i + ii].mul_(s)
+
+            if bn_bias is not None:
+                bn_bias[c_start_i + ii].mul_(s)
 
             if bias_first is not None:
                 bias_first[c_start_i + ii].mul_(s)
@@ -53,7 +59,7 @@ def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thr
         while diff > converge_thres:
             state_prev = copy.deepcopy(graph)
             for rr in relations:
-                layer_first, layer_second = rr.get_idxs()
+                layer_first, layer_second, bn_idx = rr.get_idxs()
                 
                 if visualize_state:
                     # print(torch.max(graph[layer_first].weight.detach()), torch.min(graph[layer_first].weight.detach()), 'before equal')
@@ -64,9 +70,15 @@ def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thr
                 
                 # layer eualization
                 graph[layer_first].weight, graph[layer_second].weight, graph[layer_first].bias = \
-                    _layer_equalization(graph[layer_first].weight,\
+                _layer_equalization(graph[layer_first].weight,\
                                         graph[layer_second].weight,\
-                                        graph[layer_first].bias, s_range=s_range, signed=signed, eps=eps)
+                                        graph[layer_first].bias,\
+                                        graph[bn_idx].fake_weight,\
+                                        graph[bn_idx].fake_bias, s_range=s_range, signed=signed, eps=eps)
+                # graph[layer_first].weight, graph[layer_second].weight, graph[layer_first].bias = \
+                # _layer_equalization(graph[layer_first].weight,\
+                #                         graph[layer_second].weight,\
+                #                         graph[layer_first].bias, s_range=s_range, signed=signed, eps=eps)
                 
                 if visualize_state:
                     # print(torch.max(graph[layer_first].weight.detach()), torch.min(graph[layer_first].weight.detach()), 'after equal')
