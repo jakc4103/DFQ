@@ -3,7 +3,7 @@ PyTorch implementation of [Data Free Quantization Through Weight Equalization an
 
 
 ## TODO
-- [ ] cross layer equalization
+- [x] cross layer equalization
 - [ ] high bias absorption
 - [ ] data-dependent bias correction
 - [ ] data-free bias correction
