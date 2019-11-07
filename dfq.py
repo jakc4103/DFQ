@@ -93,3 +93,48 @@ def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thr
             print('diff', diff)
     
     # return graph
+
+def bias_absorption(graph, relations, N=3):
+    def find_next_bn(layer_second, graph, idx):
+        graph_list = list(graph.items())
+        if idx is None:
+            idx = 0
+
+        while idx < len(graph_list) and graph_list[idx][0] != layer_second:
+            idx += 1
+
+        if idx >= len(graph_list) - 1:
+            return None, 0
+
+        if type(graph_list[idx+1][1]) == torch.nn.BatchNorm2d:
+            return graph_list[idx+1][0], idx + 1
+
+    idx = 0
+    for rr in relations:
+        layer_first, layer_second, bn_idx = rr.get_idxs()
+        bn_weight = getattr(graph[bn_idx], 'fake_weight').detach().clone()
+        bn_bias = getattr(graph[bn_idx], 'fake_bias').detach().clone()
+        
+        weight = graph[layer_second].weight.detach().clone()
+        size = weight.shape
+        weight = weight.view(size[0], size[1], -1)
+
+        num_group = graph[layer_first].weight.size(0) // graph[layer_second].weight.size(1)
+        step_size_o = size[0] // num_group
+        step_size_i = graph[layer_first].weight.size(0) // num_group
+        print("step_size: {}, {}".format(step_size_i, step_size_o))
+
+        c = (bn_bias - N * bn_weight)
+        c.clamp_(0)
+
+        wc = torch.zeros(size[0])
+
+        for g in range(num_group):
+            wc[g*step_size_o:(g+1)*step_size_o] = torch.matmul(torch.mean(weight[g*step_size_o:(g+1)*step_size_o], -1), c[g*step_size_i:(g+1)*step_size_i])
+
+        graph[layer_first].bias.add_(-c)
+        graph[bn_idx].fake_bias.add_(-c)
+        graph[layer_second].bias.add_(wc)
+        bn_idx_next, idx = find_next_bn(layer_second, graph, idx)
+        if bn_idx_next is not None:
+            graph[bn_idx_next].fake_bias.add_(-wc)

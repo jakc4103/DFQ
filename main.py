@@ -13,7 +13,7 @@ from dataset.pascal import VOCSegmentation
 from utils.metrics import Evaluator
 
 from utils.relation import create_relation
-from dfq import cross_layer_equalization
+from dfq import cross_layer_equalization, bias_absorption
 from utils.layer_transform import switch_layers, replace_op, restore_op, set_quant_minmax, merge_batchnorm#, LayerTransform
 from PyTransformer.transformers.torchTransformer import TorchTransformer
 
@@ -71,7 +71,7 @@ def inference_all(model):
     voc_val = VOCSegmentation(args, split='val')
     dataloader = DataLoader(voc_val, batch_size=32, shuffle=False, num_workers=0)
 
-    forward_all(model, dataloader, visualize=False)
+    forward_all(model, dataloader, visualize=True)
 
 
 def main():
@@ -112,6 +112,8 @@ def main():
     #create relations
     res = create_relation(graph, bottoms, QuantConv2d)
     cross_layer_equalization(graph, res, visualize_state=False)
+
+    bias_absorption(graph, res)
 
     set_quant_minmax(graph, bottoms, output_shape)
     
