@@ -384,7 +384,7 @@ def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d,
                     weight = getattr(bn_list[idx][0], 'weight') if not hasattr(bn_list[idx][0], 'fake_weight') else getattr(bn_list[idx][0], 'fake_weight')
                     value_max = get_max_value(bias, weight, N)
                     value_min = get_min_value(bias, weight, N) if not relu_attach_list[idx] else 0.
-                    print("type 1, max {}, min {}".format(value_max, value_min))
+                    # print("type 1, max {}, min {}".format(value_max, value_min))
                     quant_module[idx].running_max.fill_(value_max)
                     quant_module[idx].running_min.fill_(value_min)
                     idx += 1
@@ -404,7 +404,7 @@ def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d,
                 # TODO: weighting w.r.t. tensor size
                 value_max /= len(bn_list)
                 value_min /= len(bn_list)
-                print("type 2, max {}, min {}".format(value_max, value_min if not use_relu else 0.))
+                # print("type 2, max {}, min {}".format(value_max, value_min if not use_relu else 0.))
                 quant_module[0].running_max.fill_(value_max)
                 quant_module[0].running_min.fill_(value_min if not use_relu else 0.)
 
@@ -440,7 +440,7 @@ def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d,
                 assert len(bn_res) == len(quant_module), 'LENGTH NOT EQUAL {} vs {}'.format(len(bn_res), len(quant_module))
                 while idx < len(bn_res):
                     value_max, value_min = bn_res[idx]
-                    print("type 3, max {}, min {}".format(value_max, value_min))
+                    # print("type 3, max {}, min {}".format(value_max, value_min))
                     quant_module[idx].running_max.fill_(value_max)
                     quant_module[idx].running_min.fill_(value_min)
                     idx += 1
