@@ -14,21 +14,15 @@ from utils.metrics import Evaluator
 
 from utils.relation import create_relation
 from dfq import cross_layer_equalization
-from utils.layer_transform import merge_batchnorm, switch_layers, replace_op, restore_op
+from utils.layer_transform import switch_layers, replace_op, restore_op, set_quant_minmax, merge_batchnorm#, LayerTransform
 from PyTransformer.transformers.torchTransformer import TorchTransformer
 
 
-def estimate_stats(data, num_epoch=10):
+def estimate_stats(model, state_dict, data, num_epoch=10, path_save='modeling/data_dependent_QuantConv2dAdd.pth'):
     import copy
 
-    model = DeepLab(sync_bn=False)
+    # model = DeepLab(sync_bn=False)
     model.eval()
-    state_dict = torch.load('modeling/deeplab-mobilenet.pth.tar')['state_dict']
-    model.load_state_dict(state_dict)
-
-    transformer = TorchTransformer()
-
-    model = switch_layers(model, transformer, data)
     
     model = model.cuda()
 
@@ -55,26 +49,18 @@ def estimate_stats(data, num_epoch=10):
     restore_op()
 
     # load 'running_mean' and 'running_var' of batchnorm back from pre-trained parameters
-    state_dict_old = torch.load('modeling/deeplab-mobilenet.pth.tar')['state_dict']
     bn_dict = {}
-    for key in state_dict_old:
+    for key in state_dict:
         if 'running' in key:
-            bn_dict[key] = state_dict_old[key]
+            bn_dict[key] = state_dict[key]
 
     state = model.state_dict()
     state.update(bn_dict)
     model.load_state_dict(state)
 
-    # use cpu to process
-    model = model.cpu()
-    
-    transformer._build_graph(model, data) # construt graph after all state_dict loaded
+    torch.save(model.state_dict(), path_save)
 
-    graph = transformer.log.getGraph()
-    bottoms = transformer.log.getBottoms()
-
-    model = merge_batchnorm(model, graph, bottoms)
-    torch.save(model.state_dict(), 'modeling/data_dependent_QuantConv2dAdd.pth')
+    return model
 
 
 def inference_all(model):
@@ -90,23 +76,22 @@ def inference_all(model):
 
 def main():
     data = torch.ones((4, 3, 513, 513))#.cuda()
-
-    # estimate_stats(data)
+    # model = DeepLab(sync_bn=False)
+    # state_dict = torch.load('modeling/deeplab-mobilenet.pth.tar')['state_dict']
+    # model.load_state_dict(state_dict)
+    # transformer = TorchTransformer()
+    # switch_layers(model, transformer, data)
+    # estimate_stats(model, state_dict, data)
     # return
 
     model = DeepLab(sync_bn=False)
+    state_dict = torch.load('modeling/deeplab-mobilenet.pth.tar')['state_dict']
+    model.load_state_dict(state_dict)
     model.eval()
     
     transformer = TorchTransformer()
-
+    # layer_transform = LayerTransform()
     model = switch_layers(model, transformer, data)
-
-    path_state_dict = 'modeling/data_dependent_QuantConv2dAdd.pth'
-    if os.path.exists(path_state_dict):
-        print("Load params from {}".format(path_state_dict))
-        state = torch.load(path_state_dict)
- 
-        model.load_state_dict(state)
 
     # use cpu to process
     transformer = TorchTransformer()
@@ -118,17 +103,7 @@ def main():
 
     graph = transformer.log.getGraph()
     bottoms = transformer.log.getBottoms()
-
-    # from PyTransformer.transformers.quantize import QuantMeasure
-    # def print_module(model):
-    #     for mm in model._modules:
-    #         if len(model._modules[mm]._modules) > 0 and\
-    #             not (len(model._modules[mm]._modules) == 1 and type(list(model._modules[mm]._modules.values())[0]) == QuantMeasure):
-    #             print_module(model._modules[mm])
-    #         else:
-    #             print(id(getattr(model, mm)), getattr(model, mm))
-
-    # print_module(model)
+    output_shape = transformer.log.getOutShapes()
 
     from PyTransformer.transformers.quantize import QuantConv2d
     
@@ -136,17 +111,14 @@ def main():
 
     #create relations
     res = create_relation(graph, bottoms, QuantConv2d)
-    for ii in graph:
-        print(ii, graph[ii])
-    print('='*150)
-    for rr in res:
-        print(rr)
-    print('='*150)
-    return
     cross_layer_equalization(graph, res, visualize_state=False)
+
+    set_quant_minmax(graph, bottoms, output_shape)
     
     model = model.cuda()
     model.eval()
+
+    # model = estimate_stats(model, model.state_dict(), data, path_save='modeling/equalized.pth')
 
     replace_op()
     inference_all(model)
