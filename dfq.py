@@ -164,3 +164,85 @@ def bias_absorption(graph, relations, bottoms, N=3):
         # if bn_idx_next is not None:
         #     #TODO should add bias than merge batch norm
         #     graph[bn_idx_next].fake_bias.add_(-wc)
+
+
+def bias_correction(graph, bottoms):
+    from PyTransformer.transformers.quantize import UniformQuantize, QuantConv2d
+    from scipy.stats import norm
+
+    standard_normal = lambda x: torch.exp(-(x * x) / 2) / 2.50662827463
+    standard_cdf = lambda x: torch.from_numpy(norm.cdf(x)).float()
+    expect_relu = None
+    expect = None
+    eps = None
+    idx_bn_prev = None
+    for idx_layer in graph:
+        bot = bottoms[idx_layer]
+        # if type(graph[idx_layer]) == QuantConv2d:
+        #     # check if relu attached, then do bias correction
+        #     idx_prev_conv = idx_layer
+
+        #     bot_tmp = list(zip(bot[:], range(len(bot[:]))))
+        #     bn_list = []
+        #     while len(bot_tmp) > 0:
+        #         idx_bot, bid = bot_tmp.pop(0)
+        #         if idx_bot == 'Data':
+        #             break
+        #         if idx_bot not in bn_module:
+        #             bot_tmp.extend(list(zip(bottoms[idx_bot], [bid]*len(bottoms[idx_bot]))))
+        #         else:
+        #             bn_list.append((bn_module[idx_bot], bid))
+
+        #     # ignore all cat, add layers
+        #     if len(bn_list) == 1:
+        #         bn_weight = getattr(bn_list[0][0], 'fake_weight').detach().clone() # std
+        #         bn_bias = getattr(bn_list[0][0], 'fake_bias').detach().clone() # mean
+
+        #         weight = getattr(graph[idx_layer], 'weight').detach().clone()
+        #         with torch.no_grad():
+        #             weight_q = UniformQuantize().apply(weight, 8, float(weight.min()), float(weight.max()))
+
+        #             eps = torch.mean((weight_q - weight).view(weight.size(0), -1), -1)
+
+        #         expect = bn_weight * standard_normal(-bn_bias/bn_weight) + bn_bias * (1 - standard_cdf(-bn_bias/bn_weight))
+        #         print(bn_weight.shape)
+        #         print(weight.shape)
+        #         print(eps, eps.shape)
+        #         print(expect, expect.shape)
+        #         bias_corrected_prev = -eps*expect
+
+        #         graph[idx_layer].bias.add_(bias_corrected_prev)
+        
+        if type(graph[idx_layer]) == torch.nn.BatchNorm2d and len(bot) == 1 and type(graph[bot[0]]) == QuantConv2d:
+            bn_weight = getattr(graph[idx_layer], 'fake_weight').detach().clone() # std
+            bn_bias = getattr(graph[idx_layer], 'fake_bias').detach().clone() # mean
+
+            weight = getattr(graph[bot[0]], 'weight').detach().clone()
+
+            with torch.no_grad():
+                weight_q = UniformQuantize().apply(weight, 8, float(weight.min()), float(weight.max())).detach()
+                eps = torch.mean((weight_q - weight).view(weight.size(0), -1), -1)
+
+                expect_relu = bn_weight * standard_normal(-bn_bias/bn_weight) + bn_bias * (1 - standard_cdf(-bn_bias/bn_weight))
+                expect = bn_bias
+            idx_bn_prev = idx_layer
+
+        elif idx_bn_prev is not None and len(bot) == 1 and bot[0] == idx_bn_prev:
+            with torch.no_grad():
+                if type(graph[idx_layer]) == torch.nn.ReLU:
+                    bias = eps * expect_relu
+                else:
+                    bias = eps * expect
+
+                graph[bot[0]].bias.add_(-bias)
+                graph[bottoms[bot[0]][0]].bias.add_(-bias)
+            expect_relu = None
+            expect = None
+            eps = None
+            idx_bn_prev = None
+
+        else:
+            expect_relu = None
+            expect = None
+            eps = None
+            idx_bn_prev = None
