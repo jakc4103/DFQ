@@ -13,6 +13,7 @@ def _layer_equalization(weight_first, weight_second, bias_first, bn_weight=None,
     group_channels_i = weight_first.shape[0] // num_group
     group_channels_o = weight_second.shape[0] // num_group
 
+    S = torch.zeros(weight_first.size(0))
     # pdb.set_trace()
     for g in range(num_group):
         c_start_i = g * group_channels_i
@@ -35,6 +36,7 @@ def _layer_equalization(weight_first, weight_second, bias_first, bn_weight=None,
             # 1 / s = (1 / r1) * sqrt(r1 * r2)
             s = (1 / (range_1 + eps)) * torch.sqrt(range_1 * range_2 + eps)
             s = max(s_range[0], min(s_range[1], s))
+            S[c_start_i + ii] = s
 
             weight_first[c_start_i + ii].mul_(s)
             
@@ -49,7 +51,7 @@ def _layer_equalization(weight_first, weight_second, bias_first, bn_weight=None,
 
             weight_second[c_start_o:c_end_o, ii].mul_(1/s)
 
-    return weight_first, weight_second, bias_first
+    return weight_first, weight_second, bias_first, S
 
 
 def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thres=1, signed=False, eps=0, visualize_state=False):
@@ -69,7 +71,7 @@ def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thr
                     graph[layer_first].bias = nn.Parameter(data=torch.zeros((graph[layer_first].weight.size(0)), dtype=torch.float), requires_grad=False)
                 
                 # layer eualization
-                graph[layer_first].weight, graph[layer_second].weight, graph[layer_first].bias = \
+                graph[layer_first].weight, graph[layer_second].weight, graph[layer_first].bias, S = \
                 _layer_equalization(graph[layer_first].weight,\
                                         graph[layer_second].weight,\
                                         graph[layer_first].bias,\
@@ -79,7 +81,7 @@ def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thr
                 # _layer_equalization(graph[layer_first].weight,\
                 #                         graph[layer_second].weight,\
                 #                         graph[layer_first].bias, s_range=s_range, signed=signed, eps=eps)
-                
+                rr.set_scale_vec(S)
                 if visualize_state:
                     # print(torch.max(graph[layer_first].weight.detach()), torch.min(graph[layer_first].weight.detach()), 'after equal')
                     visualize_per_layer(graph[layer_first].weight.detach(), 'After equalization')
@@ -94,7 +96,7 @@ def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thr
     
     # return graph
 
-def bias_absorption(graph, relations, N=3):
+def bias_absorption(graph, relations, bottoms, N=3):
     def find_next_bn(layer_second, graph, idx):
         graph_list = list(graph.items())
         if idx is None:
@@ -104,14 +106,35 @@ def bias_absorption(graph, relations, N=3):
             idx += 1
 
         if idx >= len(graph_list) - 1:
-            return None, 0
+            return None, 0, False
 
-        if type(graph_list[idx+1][1]) == torch.nn.BatchNorm2d:
-            return graph_list[idx+1][0], idx + 1
+        if idx == len(graph_list) - 2 and type(graph_list[idx+1][1]) == torch.nn.BatchNorm2d:
+            return graph_list[idx+1][0], idx + 1, False
+
+        elif type(graph_list[idx+1][1]) == torch.nn.BatchNorm2d and type(graph_list[idx+2][1]) == torch.nn.ReLU:
+            return graph_list[idx+1][0], idx + 1, True
+
+        elif type(graph_list[idx+1][1]) == torch.nn.BatchNorm2d:
+            return graph_list[idx+1][0], idx + 1, False
+
+        return None, 0, False
+
+    def is_relu_found(layer_second, layer_first, graph, bottoms):
+        idx = layer_second
+        while idx != layer_first:
+            assert len(bottoms[idx]) == 1, 'graph in equalization relations should be 1-to-1 input-output'
+            if type(graph[bottoms[idx][0]]) == torch.nn.ReLU:
+                return True
+            idx = bottoms[idx][0]
+        return False
 
     idx = 0
     for rr in relations:
         layer_first, layer_second, bn_idx = rr.get_idxs()
+
+        if not is_relu_found(layer_second, layer_first, graph, bottoms):
+            continue
+
         bn_weight = getattr(graph[bn_idx], 'fake_weight').detach().clone()
         bn_bias = getattr(graph[bn_idx], 'fake_bias').detach().clone()
         
@@ -122,19 +145,22 @@ def bias_absorption(graph, relations, N=3):
         num_group = graph[layer_first].weight.size(0) // graph[layer_second].weight.size(1)
         step_size_o = size[0] // num_group
         step_size_i = graph[layer_first].weight.size(0) // num_group
-        print("step_size: {}, {}".format(step_size_i, step_size_o))
 
         c = (bn_bias - N * bn_weight)
         c.clamp_(0)
 
+        S = rr.get_scale_vec()
+        c[S<=1] = 0
+
         wc = torch.zeros(size[0])
 
         for g in range(num_group):
-            wc[g*step_size_o:(g+1)*step_size_o] = torch.matmul(torch.mean(weight[g*step_size_o:(g+1)*step_size_o], -1), c[g*step_size_i:(g+1)*step_size_i])
+            wc[g*step_size_o:(g+1)*step_size_o] = torch.matmul(torch.sum(weight[g*step_size_o:(g+1)*step_size_o], -1), c[g*step_size_i:(g+1)*step_size_i])
 
         graph[layer_first].bias.add_(-c)
         graph[bn_idx].fake_bias.add_(-c)
         graph[layer_second].bias.add_(wc)
-        bn_idx_next, idx = find_next_bn(layer_second, graph, idx)
-        if bn_idx_next is not None:
-            graph[bn_idx_next].fake_bias.add_(-wc)
+        bn_idx_next, idx, relu_attached = find_next_bn(layer_second, graph, idx)
+        # if bn_idx_next is not None:
+        #     #TODO should add bias than merge batch norm
+        #     graph[bn_idx_next].fake_bias.add_(-wc)

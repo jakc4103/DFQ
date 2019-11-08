@@ -8,6 +8,7 @@ class Relation():
         self.layer_first = layer_idx_1
         self.layer_second = layer_idx_2
         self.bn_idx = bn_idx_1
+        self.S = None
 
 
     def __repr__(self):
@@ -16,6 +17,15 @@ class Relation():
 
     def get_idxs(self):
         return self.layer_first, self.layer_second, self.bn_idx
+
+    def set_scale_vec(self, S):
+        if self.S is None:
+            self.S = S
+        else:
+            self.S *= S
+
+    def get_scale_vec(self):
+        return self.S
 
 
 def create_relation(graph, bottoms, conv_type=QConv2d):
