@@ -1,7 +1,7 @@
 from collections import OrderedDict
 from torch.nn import BatchNorm2d, ReLU, Dropout
 from PyTransformer.transformers.quantize import QConv2d, ReLUQuant, QuantMeasure
-from utils.quantize import QIdentity
+
 
 class Relation():
     def __init__(self, layer_idx_1, layer_idx_2, bn_idx_1):

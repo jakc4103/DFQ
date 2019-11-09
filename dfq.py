@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import copy
-from utils.utils import visualize_per_layer
+from utils import visualize_per_layer
 from PyTransformer.transformers.quantize import QConv2d
 
 def _layer_equalization(weight_first, weight_second, bias_first, bn_weight=None, bn_bias=None, s_range=(1e-8, 1e8), signed=False, eps=0):

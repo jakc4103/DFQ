@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import inspect
 
-from PyTransformer.transformers.quantize import QConv2d, ReLUQuant, QuantConv2d, quantize, QuantMeasure
+from PyTransformer.transformers.quantize import QConv2d, ReLUQuant, QuantConv2d, QuantLinear, quantize, QuantMeasure
 tensor_target = torch.Tensor
 raw_tensor_magic_op = {}
 tensor_target = torch.Tensor
@@ -187,7 +187,7 @@ def switch_layers(model, transformer, data, ignore=['pad']):
     transformer.register(nn.ReLU6, nn.ReLU)
     # transformer.register(nn.ReLU, ReLUQuant)
     model = transformer.trans_layers(model, update=False)
-    # transformer.register(nn.Conv2d, QConv2d)
+    transformer.register(nn.Linear, QuantLinear)
     transformer.register(nn.Conv2d, QuantConv2d)
     model = transformer.trans_layers(model)
 
