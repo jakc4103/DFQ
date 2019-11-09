@@ -7,14 +7,16 @@ PyTorch implementation of [Data Free Quantization Through Weight Equalization an
 
 model/precision | FP32  | Int8|
 ----------------|-------|-------|
-Original  | 70.81 |  59.72|
-+Layer equalization  | - | 65.97|  
+Original  | 70.81 |  -|
+replace relu6  | 70.72 |  59.72|
++Layer equalization  | 70.72 | 65.97|  
 
 #### Pascal VOC 2007 test set  
 model/precision | FP32  | Int8  
 ----------------|-------|-------  
-Original (FP32) | 74.54 |  60.15
-+Layer equalization  | - | 69.43
+Original | 74.54 |  -
+replace relu6 | 74.35 |  60.15
++Layer equalization  | 74.35 | 69.43
 
 ## TODO
 - [x] cross layer equalization
