@@ -75,7 +75,7 @@ class VOCSegmentation(Dataset):
         for split in self.split:
             if split == "train":
                 return self.transform_tr(sample)
-            elif split == 'val':
+            elif split == 'val' or split == 'test':
                 return self.transform_val(sample)
 
 
