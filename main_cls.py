@@ -62,31 +62,32 @@ def estimate_stats(model, state_dict, data, num_epoch=10, path_save='modeling/da
 
 
 def inference_all(model):
-    args = lambda: 0
-    args.base_size = 224
-    args.crop_size = 224
-    imagenet_dataset = ImageNetDataset(args, split='val')
-    dataloader = DataLoader(imagenet_dataset, batch_size=256, shuffle=False, num_workers=0)
+    from torchvision import transforms, datasets
+
+    imagenet_dataset = datasets.ImageFolder('D:/workspace/dataset/ILSVRC/Data/CLS-LOC/val', transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
+    ]))
+
+    dataloader = DataLoader(imagenet_dataset, batch_size=256, shuffle=False, num_workers=0, pin_memory=True)
 
     num_correct = 0
-
+    num_total = 0
     with torch.no_grad():
         for ii, sample in enumerate(dataloader):
-            image, label = sample['image'].cuda(), sample['label'].numpy()
-
+            image, label = sample[0].cuda(), sample[1].numpy()
             logits = model(image)
 
-            pred = torch.max(torch.softmax(logits, 1), 1)[1].cpu().numpy().astype(np.uint8)
-
-            # print(torch.max(torch.softmax(logits, 1), 1)[0])
-            # print(pred)
-            # print(label)
-            # print('='*150)
-
+            pred = torch.max(logits, 1)[1].cpu().numpy()
+            
             num_correct += np.sum(pred == label)
-            print(num_correct)
+            num_total += image.shape[0]
+            print(num_correct, num_total, num_correct/num_total)
 
-    print("Acc: {}".format(num_correct / len(imagenet_dataset)))
+    print("Acc: {}".format(num_correct / num_total))
 
 
 def main():
@@ -94,8 +95,6 @@ def main():
 
     model = mobilenet_v2('modeling/classification/mobilenetv2_1.0-f2a8633.pth.tar')
     model.eval()
-    inference_all(model.cuda())
-    return
     
     transformer = TorchTransformer()
     # layer_transform = LayerTransform()
@@ -119,8 +118,8 @@ def main():
     model = merge_batchnorm(model, graph, bottoms, QuantConv2d)
 
     #create relations
-    # res = create_relation(graph, bottoms, QuantConv2d)
-    # cross_layer_equalization(graph, res, visualize_state=False)
+    res = create_relation(graph, bottoms, QuantConv2d)
+    cross_layer_equalization(graph, res, visualize_state=False)
 
     # bias_absorption(graph, res, bottoms, 3)
     # bias_correction(graph, bottoms)
