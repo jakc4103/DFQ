@@ -7,8 +7,8 @@ import torch.nn.functional as F
 import numpy as np
 
 from modeling.classification.MobileNetV2 import mobilenet_v2
-from dataset.classification.imagenet_dataset import ImageNetDataset
 from torch.utils.data import DataLoader
+from torchvision import transforms, datasets
 
 from utils.relation import create_relation
 from dfq import cross_layer_equalization, bias_absorption, bias_correction
@@ -62,8 +62,6 @@ def estimate_stats(model, state_dict, data, num_epoch=10, path_save='modeling/da
 
 
 def inference_all(model):
-    from torchvision import transforms, datasets
-
     imagenet_dataset = datasets.ImageFolder('D:/workspace/dataset/ILSVRC/Data/CLS-LOC/val', transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
@@ -113,12 +111,12 @@ def main():
     bottoms = transformer.log.getBottoms()
     output_shape = transformer.log.getOutShapes()
 
-    from PyTransformer.transformers.quantize import QuantConv2d
+    from PyTransformer.transformers.quantize import QuantConv2d, QuantLinear
     
-    model = merge_batchnorm(model, graph, bottoms, QuantConv2d)
+    model = merge_batchnorm(model, graph, bottoms, [QuantConv2d, QuantLinear])
 
     #create relations
-    res = create_relation(graph, bottoms, QuantConv2d)
+    res = create_relation(graph, bottoms, [QuantConv2d, QuantLinear])
     cross_layer_equalization(graph, res, visualize_state=False)
 
     # bias_absorption(graph, res, bottoms, 3)

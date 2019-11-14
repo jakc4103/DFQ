@@ -172,12 +172,12 @@ if __name__ == '__main__':
     bottoms = transformer.log.getBottoms()
     output_shape = transformer.log.getOutShapes()
 
-    from PyTransformer.transformers.quantize import QuantConv2d
+    from PyTransformer.transformers.quantize import QuantConv2d, QuantLinear
     
-    net = merge_batchnorm(net, graph, bottoms, QuantConv2d)
+    net = merge_batchnorm(net, graph, bottoms, [QuantConv2d, QuantLinear])
 
     #create relations
-    res = create_relation(graph, bottoms, QuantConv2d)
+    res = create_relation(graph, bottoms, [QuantConv2d, QuantLinear])
     cross_layer_equalization(graph, res, visualize_state=False)
 
     # bias_absorption(graph, res, bottoms, 3)

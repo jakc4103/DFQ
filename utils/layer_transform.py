@@ -265,7 +265,7 @@ class CustomTensorOP(nn.Module):
         return x
 
 
-def merge_batchnorm(model, graph, bottoms, conv_type=QConv2d):
+def merge_batchnorm(model, graph, bottoms, targ_type=[QConv2d]):
     with torch.no_grad():
         # merge bn params into QConv2d
         for layer_idx in graph:
@@ -273,7 +273,7 @@ def merge_batchnorm(model, graph, bottoms, conv_type=QConv2d):
             if bottoms[layer_idx] is None:
                 continue
             for bot_idx in bottoms[layer_idx]:
-                if type(graph[layer_idx]) == nn.BatchNorm2d and type(graph[bot_idx]) == conv_type:
+                if type(graph[layer_idx]) == nn.BatchNorm2d and type(graph[bot_idx]) in targ_type:
                     # TODO: suppport gpu version
                     conv_weight = graph[bot_idx].weight.detach()
                     bn_weight = graph[layer_idx].weight.detach()

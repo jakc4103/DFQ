@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from torch.nn import BatchNorm2d, ReLU, Dropout
-from PyTransformer.transformers.quantize import QConv2d, ReLUQuant, QuantMeasure
+from PyTransformer.transformers.quantize import QConv2d, QuantMeasure
 
 
 class Relation():
@@ -28,7 +28,7 @@ class Relation():
         return self.S
 
 
-def create_relation(graph, bottoms, conv_type=QConv2d):
+def create_relation(graph, bottoms, targ_type=[QConv2d]):
     name_pre = None
     top_pre = None
     bn_pre = None
@@ -41,7 +41,7 @@ def create_relation(graph, bottoms, conv_type=QConv2d):
             for bot in bottoms[layer_idx]:
                 if bot in relation_dict:
                     relation_dict.pop(bot)
-        if type(graph[layer_idx]) == conv_type:
+        if type(graph[layer_idx]) in targ_type:
             if top_pre in bottoms[layer_idx]:
                 rel_tmp = Relation(name_pre, layer_idx, bn_pre)
                 relation_dict[top_pre] = rel_tmp
@@ -49,7 +49,7 @@ def create_relation(graph, bottoms, conv_type=QConv2d):
             name_pre = layer_idx
             top_pre = layer_idx
 
-        elif (type(graph[layer_idx]) in [BatchNorm2d, ReLUQuant, QuantMeasure, ReLU] or (type(graph[layer_idx]) == str and 'F.pad' in layer_idx))\
+        elif (type(graph[layer_idx]) in [BatchNorm2d, QuantMeasure, ReLU] or (type(graph[layer_idx]) == str and 'F.pad' in layer_idx))\
                 and top_pre in bottoms[layer_idx]:
             if type(graph[layer_idx]) == BatchNorm2d:
                 bn_pre = layer_idx

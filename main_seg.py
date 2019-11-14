@@ -106,10 +106,10 @@ def main():
 
     from PyTransformer.transformers.quantize import QuantConv2d
     
-    model = merge_batchnorm(model, graph, bottoms, QuantConv2d)
+    model = merge_batchnorm(model, graph, bottoms, [QuantConv2d])
 
     #create relations
-    res = create_relation(graph, bottoms, QuantConv2d)
+    res = create_relation(graph, bottoms, [QuantConv2d])
     cross_layer_equalization(graph, res, visualize_state=False)
 
     # bias_absorption(graph, res, bottoms, 3)
