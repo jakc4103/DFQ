@@ -13,66 +13,6 @@ torch_op_supported = ['cat', 'mean']
 raw_func_op = {}
 func_op_sopprted = ['interpolate']
 
-
-# class LayerTransform():
-#     def __init__(self):
-#         self.raw_tensor_magic_op = {}
-#         self.tensor_magic_op_supported = ['__add__', 'add', '__iadd__']
-#         self.raw_torch_op = {}
-#         self.torch_op_supported = ['cat']
-#         self.raw_func_op = {}
-#         self.func_op_sopprted = ['interpolate']
-#         self.name_tensor_op = None
-#         # self.module_tensor_op = None
-#         self.idx_tensor_op_quantize = 0
-#         self.model = None
-
-
-#     def ___add__(self, input, *args):
-#         # global name_tensor_op, idx_tensor_op_quantize
-#         _stack = inspect.stack()
-#         # name_tensor_op = getattr(_stack[8][0].f_locals['self'], 'name_tensor_op')
-#         # idx_tensor_op_quantize = getattr(_stack[8][0].f_locals['self'], 'idx_tensor_op')
-#         print('{}_{}'.format(_stack[1][0].f_locals['self'].__class__.__name__, _stack[1].lineno))
-#         if '{}_{}'.format(_stack[1][0].f_locals['self'].__class__.__name__, _stack[1].lineno) == self.name_tensor_op[self.idx_tensor_op_quantize]:
-#             # input = _stack[8][0].f_locals['self']._modules['custom_tensor_op'](input, self.idx_tensor_op_quantize*2)
-#             # args = [_stack[8][0].f_locals['self']._modules['custom_tensor_op'](args[0], self.idx_tensor_op_quantize*2 + 1)]
-#             input = self.model._modules['custom_tensor_op'](input, self.idx_tensor_op_quantize*2)
-#             print("__add__", len(args), args)
-#             print(type(self), type(input), type(args))
-#             print(input.shape)
-#             args = [self.model._modules['custom_tensor_op'](args[0], self.idx_tensor_op_quantize*2 + 1)]
-#             self.idx_tensor_op_quantize += 1
-#             self.idx_tensor_op_quantize %= len(self.name_tensor_op)
-
-#         x = self.raw_tensor_magic_op['__add__'](input, *args)
-
-#         del _stack
-
-#         return x
-
-
-#     def ___iadd__(self, input, *args):
-#         # global name_tensor_op, idx_tensor_op_quantize
-#         _stack = inspect.stack()
-#         # name_tensor_op = getattr(_stack[8][0].f_locals['self'], 'name_tensor_op')
-#         # idx_tensor_op_quantize = getattr(_stack[8][0].f_locals['self'], 'idx_tensor_op')
-#         if '{}_{}'.format(_stack[1][0].f_locals['self'].__class__.__name__, _stack[1].lineno) == self.name_tensor_op[self.idx_tensor_op_quantize]:
-#             input = _stack[8][0].f_locals['self']._modules['custom_tensor_op'](input, self.idx_tensor_op_quantize*2)
-#             args = [_stack[8][0].f_locals['self']._modules['custom_tensor_op'](args[0], self.idx_tensor_op_quantize*2 + 1)]
-#             self.idx_tensor_op_quantize += 1
-#             self.idx_tensor_op_quantize %= len(self.name_tensor_op)
-
-#         x = self.raw_tensor_magic_op['__add__'](input, *args)
-
-#         del _stack
-
-#         return x
-
-#     def _add(self, input,*args):
-#         return self.___add__(input, *args)
-
-
 def ___add__(input, *args):
     # global name_tensor_op, idx_tensor_op_quantize
     global raw_tensor_magic_op, module_tensor_op
@@ -165,14 +105,10 @@ def F_interpolate(input, size=None, scale_factor=None, mode='nearest', align_cor
 
 def replace_op():
     global tensor_magic_op_supported, raw_tensor_magic_op, torch_op_supported, raw_torch_op, func_op_sopprted, raw_func_op
-    # global tensor_target
-    # tensor_target = torch.Tensor
-    # for op_name in layer_transform.tensor_magic_op_supported:
+
     for op_name in tensor_magic_op_supported:
         raw_op = getattr(torch.Tensor ,op_name)
-        # layer_transform.raw_tensor_magic_op[op_name] = raw_op
         raw_tensor_magic_op[op_name] = raw_op
-        # setattr(tensor_target, op_name, getattr(layer_transform, '_' + op_name))
         setattr(tensor_target, op_name, globals()['_' + op_name])
 
     for op_name in torch_op_supported:
@@ -188,10 +124,8 @@ def replace_op():
 def restore_op():
     global tensor_magic_op_supported, raw_tensor_magic_op, torch_op_supported, raw_torch_op, func_op_sopprted, raw_func_op
     global tensor_target
-    # tensor_target = torch.Tensor
-    # for op_name in layer_transform.tensor_magic_op_supported:
+
     for op_name in tensor_magic_op_supported:
-        # setattr(tensor_target, op_name, layer_transform.raw_tensor_magic_op[op_name])
         setattr(tensor_target, op_name, raw_tensor_magic_op[op_name])
 
     for op_name in torch_op_supported:
@@ -201,14 +135,12 @@ def restore_op():
         setattr(F, op_name, raw_func_op[op_name])
 
 
-def switch_layers(model, transformer, data, ignore=['pad']):
+def switch_layers(model, transformer, data, module_dict, ignore=['pad']):
     # replace layers
-    transformer.register(nn.ReLU6, nn.ReLU)
-    # transformer.register(nn.ReLU, ReLUQuant)
-    model = transformer.trans_layers(model, update=False)
-    transformer.register(nn.Linear, QuantLinear)
-    transformer.register(nn.Conv2d, QuantConv2d)
-    model = transformer.trans_layers(model)
+    for key in module_dict:
+        for source, target in module_dict[key]:
+            transformer.register(source, target)
+        model = transformer.trans_layers(model, update=True if key == 1 else False)
 
     transformer._build_graph(model, data) # construt graph after all state_dict loaded
 
@@ -231,15 +163,12 @@ def switch_layers(model, transformer, data, ignore=['pad']):
             qnum -= 1
 
     name_tensor_op = tmp
-    # setattr(layer_transform, 'name_tensor_op', name_tensor_op)
 
     module_tensor_op = CustomTensorOP(tensor_op_quantize, name_tensor_op)
     model.add_module('custom_tensor_op', module_tensor_op)
     setattr(model, 'name_tensor_op', name_tensor_op)
     setattr(model, 'idx_name_tensor_op', 0)
     setattr(model, 'idx_tensor_op', 0)
-
-    # setattr(layer_transform, 'model', model)
 
     return model
 
@@ -259,9 +188,6 @@ class CustomTensorOP(nn.Module):
         self.name_tensor_op = name_tensor_op
         self.idx_name_tensor_op = 0
         self.num_op = len(name_tensor_op)
-
-    # def __len__(self):
-    #     return self.len
 
     def add_idx_tensor_op(self):
         self.idx_tensor_op = (self.idx_tensor_op + 1) % self.len
@@ -285,6 +211,11 @@ class CustomTensorOP(nn.Module):
 
 
 def merge_batchnorm(model, graph, bottoms, targ_type=[QConv2d]):
+    """!
+    This function will merge params and stats of BatchNorm into targ_type like QuantConv2d.
+    Once the values is merged, the values of layer will be set to default (as an identity layer),
+    and it creates buffer named 'fake_weight' adn 'fake_bias' for latter usage of set_quant_minmax
+    """
     with torch.no_grad():
         # merge bn params into QConv2d
         for layer_idx in graph:
@@ -320,15 +251,25 @@ def merge_batchnorm(model, graph, bottoms, targ_type=[QConv2d]):
                     graph[layer_idx].running_mean.fill_(0)
                     graph[layer_idx].eps = 0
 
-                    
-                    # print(graph[layer_idx].running_var)
-
                     break
 
     return model
 
 
 def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d, N=6):
+    """!
+    This function set the running_min/running_max value of QuantMeasure using the statistics form previous BatchNorm layer.
+    Since I handle the values layer by layer, there will be 3 cases in computing min/max:
+        a. 1 to 1 mapping. ex: BatchNorm->ReLU->'QuantConv'
+        b. 1 to many mapping. ex: BatchNorm->ReLU->
+                                                    QuantAdd->'QuantConv'
+                                  BatchNorm->ReLU->
+        c. many to many. ex: BatchNorm->ReLU->
+                                               QuantAdd->
+                             BatchNorm->ReLU->     ;      'QuantAdd'
+                                        BatchNorm->ReLU->
+    For now, if there are multiple BatchNorm stats, I only take the mean of them, and it seems to be working fine w.r.t. the resulting accuracy.
+    """
     from collections import OrderedDict
     print("SET QUANT MIN MAX")
 
