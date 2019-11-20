@@ -9,7 +9,7 @@ raw_tensor_magic_op = {}
 tensor_target = torch.Tensor
 tensor_magic_op_supported = ['__add__', 'add', '__iadd__']
 raw_torch_op = {}
-torch_op_supported = ['cat']
+torch_op_supported = ['cat', 'mean']
 raw_func_op = {}
 func_op_sopprted = ['interpolate']
 
@@ -127,6 +127,25 @@ def torch_cat(inputs, dim=0):
     del _stack
 
     return x
+
+
+def torch_mean(input, dim=None, keepdim=False, out=None):
+    global raw_torch_op, module_tensor_op
+    _stack = inspect.stack()
+    if 'torch_mean_{}_1'.format(_stack[1].lineno) == module_tensor_op.get_name_next():
+        input = module_tensor_op(input)
+
+        module_tensor_op.add_idx_name_tensor_op()
+
+    if dim is None:
+        x = raw_torch_op['mean'](input)
+    else:
+        x = raw_torch_op['mean'](input, dim)
+
+    del _stack
+
+    return x
+
 
 def F_interpolate(input, size=None, scale_factor=None, mode='nearest', align_corners=None):
     global raw_func_op, module_tensor_op
