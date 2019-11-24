@@ -108,7 +108,8 @@ class MobileNetV2(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        x = x.mean(3).mean(2)
+        # x = x.mean(3).mean(2)
+        x = torch.mean(x.view(x.size(0), x.size(1), -1), -1)
         x = self.classifier(x)
         return x
 

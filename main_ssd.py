@@ -16,19 +16,20 @@ from modeling.detection.mobilenet_v2_ssd_lite import create_mobilenetv2_ssd_lite
 
 from utils.relation import create_relation
 from dfq import cross_layer_equalization, bias_absorption, bias_correction
-from utils.layer_transform import switch_layers, replace_op, restore_op, set_quant_minmax, merge_batchnorm#, LayerTransform
+from utils.layer_transform import switch_layers, replace_op, restore_op, set_quant_minmax, merge_batchnorm
 from PyTransformer.transformers.torchTransformer import TorchTransformer
+from PyTransformer.transformers.quantize import QuantConv2d, QuantLinear
 
 
 parser = argparse.ArgumentParser(description="SSD Evaluation on VOC Dataset.")
-parser.add_argument('--net', default="vgg16-ssd",
+parser.add_argument('--net', default="mb2-ssd-lite",
                     help="The network architecture, it should be of mb1-ssd, mb1-ssd-lite, mb2-ssd-lite or vgg16-ssd.")
-parser.add_argument("--trained_model", type=str)
+parser.add_argument("--trained_model", type=str, default='modeling/detection/mb2-ssd-lite-mp-0_686.pth')
 
-parser.add_argument("--dataset_type", default="voc", type=str,
+parser.add_argument("--dataset_type", default="voc07", type=str,
                     help='Specify dataset type. Currently support voc and open_images.')
-parser.add_argument("--dataset", type=str, help="The root directory of the VOC dataset or Open Images dataset.")
-parser.add_argument("--label_file", type=str, help="The label file path.")
+parser.add_argument("--dataset", type=str, default='D://workspace/dataset/VOCdevkit/VOC2007/', help="The root directory of the VOC dataset or Open Images dataset.")
+parser.add_argument("--label_file", type=str, default='modeling/detection/voc-model-labels.txt', help="The label file path.")
 parser.add_argument("--use_cuda", type=str2bool, default=True)
 parser.add_argument("--use_2007_metric", type=str2bool, default=True)
 parser.add_argument("--nms_method", type=str, default="hard")
@@ -36,6 +37,9 @@ parser.add_argument("--iou_threshold", type=float, default=0.5, help="The thresh
 parser.add_argument("--eval_dir", default="eval_results", type=str, help="The directory to store evaluation results.")
 parser.add_argument('--mb2_width_mult', default=1.0, type=float,
                     help='Width Multiplifier for MobilenetV2')
+parser.add_argument("--quantize", action='store_true')
+parser.add_argument("--equalize", action='store_true')
+parser.add_argument("--relu", action='store_true')
 args = parser.parse_args()
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() and args.use_cuda else "cpu")
 
@@ -130,8 +134,10 @@ if __name__ == '__main__':
     timer = Timer()
     class_names = [name.strip() for name in open(args.label_file).readlines()]
 
-    if args.dataset_type == "voc":
+    if args.dataset_type == "voc07":
         dataset = VOCDataset(args.dataset, is_test=True)
+    elif args.dataset_type == "voc12":
+        dataset = VOCDataset('D://workspace/dataset/VOCdevkit/VOC2012/', is_test=False)
     elif args.dataset_type == 'open_images':
         dataset = OpenImagesDataset(args.dataset, dataset_type="test")
 
@@ -145,7 +151,7 @@ if __name__ == '__main__':
     elif args.net == 'sq-ssd-lite':
         net = create_squeezenet_ssd_lite(len(class_names), is_test=True)
     elif args.net == 'mb2-ssd-lite':
-        net = create_mobilenetv2_ssd_lite(len(class_names), width_mult=args.mb2_width_mult, is_test=False)
+        net = create_mobilenetv2_ssd_lite(len(class_names), width_mult=args.mb2_width_mult, is_test=True)
     else:
         logging.fatal("The net type is wrong. It should be one of vgg16-ssd, mb1-ssd and mb1-ssd-lite.")
         parser.print_help(sys.stderr)
@@ -158,36 +164,46 @@ if __name__ == '__main__':
     ## network surgery here
     data = torch.ones((4, 3, 224, 224))
     transformer = TorchTransformer()
-    net = switch_layers(net, transformer, data)
+    module_dict = {}
+    if args.quantize:
+        module_dict[1] = [(torch.nn.Conv2d, QuantConv2d), (torch.nn.Linear, QuantLinear)]
+    
+    if args.relu:
+        module_dict[0] = [(torch.nn.ReLU6, torch.nn.ReLU)]
+
+    net = switch_layers(net, transformer, data, module_dict, quant_op=args.quantize)
 
     # use cpu to process
     transformer = TorchTransformer()
     net = net.cpu()
     # transformer.summary(net, data)
-    transformer.visualize(net, data, 'ssd_graph', graph_size=120)
+    # transformer.visualize(net, data, 'graph_ssd', graph_size=120)
     
     transformer._build_graph(net, data) # construt graph after all state_dict loaded
 
     graph = transformer.log.getGraph()
     bottoms = transformer.log.getBottoms()
     output_shape = transformer.log.getOutShapes()
-
-    from PyTransformer.transformers.quantize import QuantConv2d
-    
-    net = merge_batchnorm(net, graph, bottoms, QuantConv2d)
+    if args.quantize:
+        targ_layer = [QuantConv2d, QuantLinear]
+    else:
+        targ_layer = [torch.nn.Conv2d, torch.nn.Linear]
+    net = merge_batchnorm(net, graph, bottoms, targ_layer)
 
     #create relations
-    res = create_relation(graph, bottoms, QuantConv2d)
-    cross_layer_equalization(graph, res, visualize_state=False)
+    if args.equalize:
+        res = create_relation(graph, bottoms, targ_layer)
+        cross_layer_equalization(graph, res, visualize_state=False, converge_thres=1e-9)
 
     # bias_absorption(graph, res, bottoms, 3)
-    bias_correction(graph, bottoms)
+    # bias_correction(graph, bottoms)
 
-    set_quant_minmax(graph, bottoms, output_shape)
+    if args.quantize:
+        set_quant_minmax(graph, bottoms, output_shape)
     
     net = net.to(DEVICE)
 
-    print(f'It took {timer.end("Load Model")} seconds to load the model.')
+    # print(f'It took {timer.end("Load Model")} seconds to load the model.')
     if args.net == 'vgg16-ssd':
         predictor = create_vgg_ssd_predictor(net, nms_method=args.nms_method, device=DEVICE)
     elif args.net == 'mb1-ssd':
@@ -203,17 +219,18 @@ if __name__ == '__main__':
         parser.print_help(sys.stderr)
         sys.exit(1)
 
-    replace_op()
+    if args.quantize:
+        replace_op()
 
     results = []
     for i in range(len(dataset)):
-        print("process image", i)
+        # print("process image", i)
         timer.start("Load Image")
         image = dataset.get_image(i)
-        print("Load Image: {:4f} seconds.".format(timer.end("Load Image")))
+        # print("Load Image: {:4f} seconds.".format(timer.end("Load Image")))
         timer.start("Predict")
         boxes, labels, probs = predictor.predict(image)
-        print("Prediction: {:4f} seconds.".format(timer.end("Predict")))
+        # print("Prediction: {:4f} seconds.".format(timer.end("Predict")))
         indexes = torch.ones(labels.size(0), 1, dtype=torch.float32) * i
         results.append(torch.cat([
             indexes.reshape(-1, 1),
@@ -222,7 +239,8 @@ if __name__ == '__main__':
             boxes + 1.0  # matlab's indexes start from 1
         ], dim=1))
 
-    restore_op()
+    if args.quantize:
+        restore_op()
 
     results = torch.cat(results)
     for class_index, class_name in enumerate(class_names):

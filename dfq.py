@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import copy
+import numpy as np
 from utils import visualize_per_layer
-from PyTransformer.transformers.quantize import QConv2d
 
 def _layer_equalization(weight_first, weight_second, bias_first, bn_weight=None, bn_bias=None, s_range=(1e-8, 1e8), signed=False, eps=0):
     num_group = 1
@@ -54,17 +54,18 @@ def _layer_equalization(weight_first, weight_second, bias_first, bn_weight=None,
     return weight_first, weight_second, bias_first, S
 
 
-def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thres=1, signed=False, eps=0, visualize_state=False):
+def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thres=1, converge_count=5, signed=False, eps=0, visualize_state=False):
+    print("Start cross layer equalization")
     with torch.no_grad():
         diff = 10
+        count = 0
         conv_type = type(graph[relations[0].get_idxs()[0]])
-        while diff > converge_thres:
+        while diff > converge_thres and count < converge_count:
             state_prev = copy.deepcopy(graph)
             for rr in relations:
                 layer_first, layer_second, bn_idx = rr.get_idxs()
                 
                 if visualize_state:
-                    # print(torch.max(graph[layer_first].weight.detach()), torch.min(graph[layer_first].weight.detach()), 'before equal')
                     visualize_per_layer(graph[layer_first].weight.detach(), 'Before equalization')
 
                 if graph[layer_first].bias is None: # add a fake bias term
@@ -77,47 +78,25 @@ def cross_layer_equalization(graph, relations, s_range=[1e-8, 1e8], converge_thr
                                         graph[layer_first].bias,\
                                         graph[bn_idx].fake_weight,\
                                         graph[bn_idx].fake_bias, s_range=s_range, signed=signed, eps=eps)
-                # graph[layer_first].weight, graph[layer_second].weight, graph[layer_first].bias = \
-                # _layer_equalization(graph[layer_first].weight,\
-                #                         graph[layer_second].weight,\
-                #                         graph[layer_first].bias, s_range=s_range, signed=signed, eps=eps)
                 rr.set_scale_vec(S)
                 if visualize_state:
-                    # print(torch.max(graph[layer_first].weight.detach()), torch.min(graph[layer_first].weight.detach()), 'after equal')
                     visualize_per_layer(graph[layer_first].weight.detach(), 'After equalization')
 
             diff_tmp = 0
             for layer_idx in graph:
                 if type(graph[layer_idx]) == conv_type:
-                    diff_tmp += torch.mean(torch.abs(graph[layer_idx].weight - state_prev[layer_idx].weight))
-            
-            diff = min(diff, diff_tmp)
-            print('diff', diff)
+                    diff_tmp += float(torch.mean(torch.abs(graph[layer_idx].weight - state_prev[layer_idx].weight)))
+
+            if diff < diff_tmp:
+                count += 1
+            else:
+                diff = diff_tmp
+
+            # print('diff', diff)
     
     # return graph
 
 def bias_absorption(graph, relations, bottoms, N=3):
-    def find_next_bn(layer_second, graph, idx):
-        graph_list = list(graph.items())
-        if idx is None:
-            idx = 0
-
-        while idx < len(graph_list) and graph_list[idx][0] != layer_second:
-            idx += 1
-
-        if idx >= len(graph_list) - 1:
-            return None, 0, False
-
-        if idx == len(graph_list) - 2 and type(graph_list[idx+1][1]) == torch.nn.BatchNorm2d:
-            return graph_list[idx+1][0], idx + 1, False
-
-        elif type(graph_list[idx+1][1]) == torch.nn.BatchNorm2d and type(graph_list[idx+2][1]) == torch.nn.ReLU:
-            return graph_list[idx+1][0], idx + 1, True
-
-        elif type(graph_list[idx+1][1]) == torch.nn.BatchNorm2d:
-            return graph_list[idx+1][0], idx + 1, False
-
-        return None, 0, False
 
     def is_relu_found(layer_second, layer_first, graph, bottoms):
         idx = layer_second
@@ -128,7 +107,6 @@ def bias_absorption(graph, relations, bottoms, N=3):
             idx = bottoms[idx][0]
         return False
 
-    idx = 0
     for rr in relations:
         layer_first, layer_second, bn_idx = rr.get_idxs()
 
@@ -140,7 +118,6 @@ def bias_absorption(graph, relations, bottoms, N=3):
         
         weight = graph[layer_second].weight.detach().clone()
         size = weight.shape
-        weight = weight.view(size[0], size[1], -1)
 
         num_group = graph[layer_first].weight.size(0) // graph[layer_second].weight.size(1)
         step_size_o = size[0] // num_group
@@ -152,97 +129,124 @@ def bias_absorption(graph, relations, bottoms, N=3):
         S = rr.get_scale_vec()
         c[S<=1] = 0
 
-        wc = torch.zeros(size[0])
-
+        weight = weight.view(size[0], size[1], -1)
+        wc = torch.zeros(weight.size(0))
         for g in range(num_group):
             wc[g*step_size_o:(g+1)*step_size_o] = torch.matmul(torch.sum(weight[g*step_size_o:(g+1)*step_size_o], -1), c[g*step_size_i:(g+1)*step_size_i])
 
         graph[layer_first].bias.add_(-c)
         graph[bn_idx].fake_bias.add_(-c)
         graph[layer_second].bias.add_(wc)
-        bn_idx_next, idx, relu_attached = find_next_bn(layer_second, graph, idx)
-        # if bn_idx_next is not None:
-        #     #TODO should add bias than merge batch norm
-        #     graph[bn_idx_next].fake_bias.add_(-wc)
 
 
-def bias_correction(graph, bottoms):
-    from PyTransformer.transformers.quantize import UniformQuantize, QuantConv2d
+def bias_correction(graph, bottoms, targ_type, bn_type=torch.nn.BatchNorm2d):
+    from utils.layer_transform import find_prev_bn
+    from PyTransformer.transformers.quantize import UniformQuantize
     from scipy.stats import norm
 
-    standard_normal = lambda x: torch.exp(-(x * x) / 2) / 2.50662827463
+    # standard_normal = lambda x: torch.exp(-(x * x) / 2) / torch.sqrt(torch.tensor(2 * np.pi))
+    standard_normal = lambda x: torch.from_numpy(norm(0, 1).pdf(x)).float()
     standard_cdf = lambda x: torch.from_numpy(norm.cdf(x)).float()
-    expect_relu = None
-    expect = None
-    eps = None
-    idx_bn_prev = None
-    for idx_layer in graph:
-        bot = bottoms[idx_layer]
-        # if type(graph[idx_layer]) == QuantConv2d:
-        #     # check if relu attached, then do bias correction
-        #     idx_prev_conv = idx_layer
 
-        #     bot_tmp = list(zip(bot[:], range(len(bot[:]))))
-        #     bn_list = []
-        #     while len(bot_tmp) > 0:
-        #         idx_bot, bid = bot_tmp.pop(0)
-        #         if idx_bot == 'Data':
-        #             break
-        #         if idx_bot not in bn_module:
-        #             bot_tmp.extend(list(zip(bottoms[idx_bot], [bid]*len(bottoms[idx_bot]))))
-        #         else:
-        #             bn_list.append((bn_module[idx_bot], bid))
+    bn_module = {}
+    bn_out_shape = {}
+    relu_attached = {}
+    bias_prev = None
+    with torch.no_grad():
+        for idx_layer in graph:
+            bot = bottoms[idx_layer]
 
-        #     # ignore all cat, add layers
-        #     if len(bn_list) == 1:
-        #         bn_weight = getattr(bn_list[0][0], 'fake_weight').detach().clone() # std
-        #         bn_bias = getattr(bn_list[0][0], 'fake_bias').detach().clone() # mean
+            if bot is None or bot[0] == 'Data':
+                continue
 
-        #         weight = getattr(graph[idx_layer], 'weight').detach().clone()
-        #         with torch.no_grad():
-        #             weight_q = UniformQuantize().apply(weight, 8, float(weight.min()), float(weight.max()))
-
-        #             eps = torch.mean((weight_q - weight).view(weight.size(0), -1), -1)
-
-        #         expect = bn_weight * standard_normal(-bn_bias/bn_weight) + bn_bias * (1 - standard_cdf(-bn_bias/bn_weight))
-        #         print(bn_weight.shape)
-        #         print(weight.shape)
-        #         print(eps, eps.shape)
-        #         print(expect, expect.shape)
-        #         bias_corrected_prev = -eps*expect
-
-        #         graph[idx_layer].bias.add_(bias_corrected_prev)
+            if type(graph[idx_layer]) == bn_type:
+                bn_module[idx_layer] = graph[idx_layer]
+                bn_out_shape[idx_layer] = graph[idx_layer]
+                relu_attached[idx_layer] = False
+                if bias_prev is not None:
+                    graph[idx_layer].fake_bias.add_(bias_prev)
+                    bias_prev = None
+                continue
         
-        if type(graph[idx_layer]) == torch.nn.BatchNorm2d and len(bot) == 1 and type(graph[bot[0]]) == QuantConv2d:
-            bn_weight = getattr(graph[idx_layer], 'fake_weight').detach().clone() # std
-            bn_bias = getattr(graph[idx_layer], 'fake_bias').detach().clone() # mean
+            if type(graph[idx_layer]) == torch.nn.ReLU:
+                if bot[0] in bn_module:
+                    relu_attached[bot[0]] = True
 
-            weight = getattr(graph[bot[0]], 'weight').detach().clone()
+            if type(graph[idx_layer]) in targ_type:
+                bn_list, relu_attach_list = find_prev_bn(bn_module, relu_attached, bottoms, bot[:])
+                print('bn_list', len(bn_list))
+                # if len(bn_list) > 1:
+                #     continue
 
-            with torch.no_grad():
+                weight = getattr(graph[idx_layer], 'weight').detach().clone()
+
                 weight_q = UniformQuantize().apply(weight, 8, float(weight.min()), float(weight.max())).detach()
-                eps = torch.mean((weight_q - weight).view(weight.size(0), -1), -1)
+                eps = torch.sum((weight_q - weight).view(weight.size(0), weight.size(1), -1), -1)
 
-                expect_relu = bn_weight * standard_normal(-bn_bias/bn_weight) + bn_bias * (1 - standard_cdf(-bn_bias/bn_weight))
-                expect = bn_bias
-            idx_bn_prev = idx_layer
+                bn_branch = {}
+                for idx, tmp in enumerate(bn_list):
+                    _, bid = tmp
+                    if bid[0] in bn_branch:
+                        bn_branch[bid[0]].append((tmp, relu_attach_list[idx]))
+                    else:
+                        bn_branch[bid[0]] = [(tmp, relu_attach_list[idx])]
+                bn_res = {}
+                for key in bn_branch:
+                    tmp_list = sorted(bn_branch[key], key=lambda x: len(x[0][1]), reverse=True)
+                    node_cur, use_relu = tmp_list[0]
+                    layer_cur, bid = node_cur
+                    depth = len(bid)
+                    tmp_list.pop(0)
+                    bn_bias = layer_cur.fake_bias.detach().clone()
+                    bn_weight = layer_cur.fake_weight.detach().clone()
+                    
+                    if use_relu:
+                        expect = bn_weight * standard_normal(-bn_bias/bn_weight) + bn_bias * (1 - standard_cdf(-bn_bias/bn_weight))
+                    else:
+                        expect = bn_bias
 
-        elif idx_bn_prev is not None and len(bot) == 1 and bot[0] == idx_bn_prev:
-            with torch.no_grad():
-                if type(graph[idx_layer]) == torch.nn.ReLU:
-                    bias = eps * expect_relu
-                else:
-                    bias = eps * expect
+                    while len(tmp_list) > 1:
+                        idx_bound = 0
+                        
+                        while idx_bound < len(tmp_list) and len(tmp_list[idx_bound][0][1]) == depth:
+                            idx_bound += 1
 
-                graph[bot[0]].bias.add_(-bias)
-                graph[bottoms[bot[0]][0]].bias.add_(-bias)
-            expect_relu = None
-            expect = None
-            eps = None
-            idx_bn_prev = None
+                        if idx_bound == 0 and len(tmp_list) > 0:
+                            # cut depth, add node_cur back
+                            depth = len(tmp_list[idx_bound][0][1])
 
-        else:
-            expect_relu = None
-            expect = None
-            eps = None
-            idx_bn_prev = None
+                        else:
+                            for idx in range(idx_bound):
+                                node_tmp, use_relu_tmp = tmp_list[idx]
+                                bn_bias = node_tmp[0].fake_bias.detach().clone()
+                                bn_weight = node_tmp[0].fake_weight.detach().clone()
+
+                                if use_relu_tmp:
+                                    expect += bn_weight * standard_normal(-bn_bias/bn_weight) + bn_bias * (1 - standard_cdf(-bn_bias/bn_weight))
+                                else:
+                                    expect += bn_bias
+
+                                use_relu = use_relu and use_relu_tmp
+                            tmp_list = tmp_list[idx_bound:]
+                            # expect /= (idx_bound + 1)
+
+                    bn_res[key] = expect
+
+                expect = 0
+                for key in bn_res:
+                    expect += bn_res[key]
+                
+                # expect /= len(bn_res)
+
+                # group operation
+                num_group = expect.size(0) // eps.size(1)
+                step_size_o = eps.size(0) // num_group
+                step_size_i = expect.size(0) // num_group
+
+                bias = torch.zeros(eps.size(0))
+                for g in range(num_group):
+                    bias[g*step_size_o:(g+1)*step_size_o] = torch.matmul(eps[g*step_size_o:(g+1)*step_size_o], expect[g*step_size_i:(g+1)*step_size_i])
+
+                # bias = torch.matmul(eps, expect)
+                graph[idx_layer].bias.add_(-bias)
+                bias_prev = -bias

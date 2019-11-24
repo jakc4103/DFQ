@@ -20,7 +20,8 @@ class VOCDataset:
         if is_test:
             image_sets_file = self.root / "ImageSets/Main/test.txt"
         else:
-            image_sets_file = self.root / "ImageSets/Main/trainval.txt"
+            image_sets_file = self.root / "ImageSets/Main/val.txt"
+            # image_sets_file = self.root / "ImageSets/Main/trainval.txt"
         self.ids = VOCDataset._read_image_ids(image_sets_file)
         self.keep_difficult = keep_difficult
 
