@@ -131,7 +131,7 @@ def compute_average_precision_per_class(num_true_cases, gt_boxes, difficult_case
 if __name__ == '__main__':
     eval_path = pathlib.Path(args.eval_dir)
     eval_path.mkdir(exist_ok=True)
-    timer = Timer()
+    # timer = Timer()
     class_names = [name.strip() for name in open(args.label_file).readlines()]
 
     if args.dataset_type == "voc07":
@@ -157,7 +157,7 @@ if __name__ == '__main__':
         parser.print_help(sys.stderr)
         sys.exit(1)  
 
-    timer.start("Load Model")
+    # timer.start("Load Model")
     net.load(args.trained_model)
     # net = net.to(DEVICE)
 
@@ -223,12 +223,13 @@ if __name__ == '__main__':
         replace_op()
 
     results = []
+    print("Start Inference")
     for i in range(len(dataset)):
         # print("process image", i)
-        timer.start("Load Image")
+        # timer.start("Load Image")
         image = dataset.get_image(i)
         # print("Load Image: {:4f} seconds.".format(timer.end("Load Image")))
-        timer.start("Predict")
+        # timer.start("Predict")
         boxes, labels, probs = predictor.predict(image)
         # print("Prediction: {:4f} seconds.".format(timer.end("Predict")))
         indexes = torch.ones(labels.size(0), 1, dtype=torch.float32) * i

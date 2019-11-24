@@ -24,7 +24,7 @@ class Predictor:
         self.net.to(self.device)
         self.net.eval()
 
-        self.timer = Timer()
+        # self.timer = Timer()
 
     def predict(self, image, top_k=-1, prob_threshold=None):
         cpu_device = torch.device("cpu")
@@ -33,7 +33,7 @@ class Predictor:
         images = image.unsqueeze(0)
         images = images.to(self.device)
         with torch.no_grad():
-            self.timer.start()
+            # self.timer.start()
             scores, boxes = self.net.forward(images)
             # print("Inference time: ", self.timer.end())
         boxes = boxes[0]
