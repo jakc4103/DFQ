@@ -32,16 +32,16 @@ replace relu6 | 74.35 |  60.15
 #### Pascal VOC 2012 val set (mAP)  
 model/precision | FP32 | Int8*|
 -----------|------|------|
-Original   |  | 
-replace relu6 |  | 
-+layer equalization |  | 
+Original   | 70.95 | 
+replace relu6 | 67.44 | 
++layer equalization | 67.44 | 
 
 #### Pascal VOC 2007 test set (mAP)  
 model/precision | FP32  | Int8*  
 ----------------|-------|-------  
-Original |  |  
-replace relu6 |  |  
-+Layer equalization  |  | 
+Original | 60.5 |  
+replace relu6 | 57.61 |  
++Layer equalization  | 57.61 | 
 
 ## Usage
 There are 3 arguments, all default to False
