@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
 
 from utils.relation import create_relation
-from dfq import cross_layer_equalization, bias_absorption, bias_correction
+from dfq import cross_layer_equalization, bias_absorption, bias_correction, _quantize_error, clip_weight
 from utils.layer_transform import switch_layers, replace_op, restore_op, set_quant_minmax, merge_batchnorm#, LayerTransform
 from PyTransformer.transformers.torchTransformer import TorchTransformer
 
@@ -22,13 +22,16 @@ def get_argument():
     parser = argparse.ArgumentParser()
     parser.add_argument("--quantize", action='store_true')
     parser.add_argument("--equalize", action='store_true')
+    parser.add_argument("--correction", action='store_true')
+    parser.add_argument("--absorption", action='store_true')
     parser.add_argument("--relu", action='store_true')
+    parser.add_argument("--clip_weight", action='store_true')
     return parser.parse_args()
 
 
 def inference_all(model):
     print("Start inference")
-    imagenet_dataset = datasets.ImageFolder('D:/workspace/dataset/ILSVRC/Data/CLS-LOC/val', transforms.Compose([
+    imagenet_dataset = datasets.ImageFolder('/home/jakc4103/Windows/Dec19/workspace/dataset/ILSVRC/Data/CLS-LOC/val', transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
@@ -36,7 +39,7 @@ def inference_all(model):
                                  std=[0.229, 0.224, 0.225]),
     ]))
 
-    dataloader = DataLoader(imagenet_dataset, batch_size=256, shuffle=False, num_workers=0, pin_memory=True)
+    dataloader = DataLoader(imagenet_dataset, batch_size=256, shuffle=False, num_workers=4, pin_memory=True)
 
     num_correct = 0
     num_total = 0
@@ -50,12 +53,14 @@ def inference_all(model):
             num_correct += np.sum(pred == label)
             num_total += image.shape[0]
             # print(num_correct, num_total, num_correct/num_total)
-
-    print("Acc: {}".format(num_correct / num_total))
+    acc = num_correct / num_total
+    return acc
 
 
 def main():
     args = get_argument()
+    assert args.relu or args.relu == args.equalize, 'must replace relu6 to relu while equalization'
+    assert args.equalize or args.absorption == args.equalize, 'must use absorption with equalize'
     data = torch.ones((4, 3, 224, 224))#.cuda()
 
     model = mobilenet_v2('modeling/classification/mobilenetv2_1.0-f2a8633.pth.tar')
@@ -93,10 +98,16 @@ def main():
     #create relations
     if args.equalize:
         res = create_relation(graph, bottoms, targ_layer)
-        cross_layer_equalization(graph, res, visualize_state=False, converge_thres=1e-9)
+        cross_layer_equalization(graph, res, visualize_state=False, converge_thres=2e-7)
+    
+    if args.absorption:
+        bias_absorption(graph, res, bottoms, 3)
+    
+    if args.clip_weight:
+        clip_weight(graph, range_clip=[-15, 15], targ_type=targ_layer)
 
-    # bias_absorption(graph, res, bottoms, 3)
-    # bias_correction(graph, bottoms, [QuantConv2d, QuantLinear])
+    if args.correction:
+        bias_correction(graph, bottoms, targ_layer)
 
     if args.quantize:
         set_quant_minmax(graph, bottoms, output_shape)
@@ -106,7 +117,8 @@ def main():
 
     if args.quantize:
         replace_op()
-    inference_all(model)
+    acc = inference_all(model)
+    print("Acc: {}".format(acc))
     if args.quantize:
         restore_op()
 

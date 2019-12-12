@@ -15,7 +15,7 @@ import sys
 from modeling.detection.mobilenet_v2_ssd_lite import create_mobilenetv2_ssd_lite, create_mobilenetv2_ssd_lite_predictor
 
 from utils.relation import create_relation
-from dfq import cross_layer_equalization, bias_absorption, bias_correction
+from dfq import cross_layer_equalization, bias_absorption, bias_correction, clip_weight
 from utils.layer_transform import switch_layers, replace_op, restore_op, set_quant_minmax, merge_batchnorm
 from PyTransformer.transformers.torchTransformer import TorchTransformer
 from PyTransformer.transformers.quantize import QuantConv2d, QuantLinear
@@ -28,7 +28,7 @@ parser.add_argument("--trained_model", type=str, default='modeling/detection/mb2
 
 parser.add_argument("--dataset_type", default="voc07", type=str,
                     help='Specify dataset type. Currently support voc and open_images.')
-parser.add_argument("--dataset", type=str, default='D://workspace/dataset/VOCdevkit/VOC2007/', help="The root directory of the VOC dataset or Open Images dataset.")
+parser.add_argument("--dataset", type=str, default='/media/jakc4103/Toshiba/workspace/dataset/VOCdevkit/VOC2007/', help="The root directory of the VOC dataset or Open Images dataset.")
 parser.add_argument("--label_file", type=str, default='modeling/detection/voc-model-labels.txt', help="The label file path.")
 parser.add_argument("--use_cuda", type=str2bool, default=True)
 parser.add_argument("--use_2007_metric", type=str2bool, default=True)
@@ -39,7 +39,10 @@ parser.add_argument('--mb2_width_mult', default=1.0, type=float,
                     help='Width Multiplifier for MobilenetV2')
 parser.add_argument("--quantize", action='store_true')
 parser.add_argument("--equalize", action='store_true')
+parser.add_argument("--correction", action='store_true')
+parser.add_argument("--absorption", action='store_true')
 parser.add_argument("--relu", action='store_true')
+parser.add_argument("--clip_weight", action='store_true')
 args = parser.parse_args()
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() and args.use_cuda else "cpu")
 
@@ -129,6 +132,8 @@ def compute_average_precision_per_class(num_true_cases, gt_boxes, difficult_case
 
 
 if __name__ == '__main__':
+    assert args.relu or args.relu == args.equalize, 'must replace relu6 to relu while equalization'
+    assert args.equalize or args.absorption == args.equalize, 'must use absorption with equalize'
     eval_path = pathlib.Path(args.eval_dir)
     eval_path.mkdir(exist_ok=True)
     # timer = Timer()
@@ -137,7 +142,7 @@ if __name__ == '__main__':
     if args.dataset_type == "voc07":
         dataset = VOCDataset(args.dataset, is_test=True)
     elif args.dataset_type == "voc12":
-        dataset = VOCDataset('D://workspace/dataset/VOCdevkit/VOC2012/', is_test=False)
+        dataset = VOCDataset('/media/jakc4103/Toshiba/workspace/dataset/VOCdevkit/VOC2012/', is_test=False)
     elif args.dataset_type == 'open_images':
         dataset = OpenImagesDataset(args.dataset, dataset_type="test")
 
@@ -193,13 +198,19 @@ if __name__ == '__main__':
     #create relations
     if args.equalize:
         res = create_relation(graph, bottoms, targ_layer)
-        cross_layer_equalization(graph, res, visualize_state=False, converge_thres=1e-9)
+        cross_layer_equalization(graph, res, visualize_state=False, converge_thres=2e-7)
 
-    # bias_absorption(graph, res, bottoms, 3)
-    # bias_correction(graph, bottoms)
+    if args.absorption:
+        bias_absorption(graph, res, bottoms, 3)
+    
+    if args.clip_weight:
+        clip_weight(graph, range_clip=[-15, 15], targ_type=targ_layer)
+
+    if args.correction:
+        bias_correction(graph, bottoms, targ_layer)
 
     if args.quantize:
-        set_quant_minmax(graph, bottoms, output_shape)
+        set_quant_minmax(graph, bottoms, output_shape, is_detection=True)
     
     net = net.to(DEVICE)
 
@@ -258,6 +269,9 @@ if __name__ == '__main__':
                 )
     aps = []
     print("\n\nAverage Precision Per-class:")
+    fff = open('ssd_{}_result.txt'.format(args.dataset_type), 'a+')
+    fff.write("quant: {}, relu: {}, equalize: {}, absorption: {}, correction: {}, clip_weight: {}\n".format(
+        args.quantize, args.relu, args.equalize, args.absorption, args.correction, args.clip_weight))
     for class_index, class_name in enumerate(class_names):
         if class_index == 0:
             continue
@@ -270,9 +284,14 @@ if __name__ == '__main__':
             args.iou_threshold,
             args.use_2007_metric
         )
+        
+        fff.write("{}: {}\n".format(class_name, ap))
         aps.append(ap)
         print(f"{class_name}: {ap}")
-
+    fff.write("Average Precision: {}\n".format(sum(aps)/len(aps)))
+    fff.write("="*150)
+    fff.write("\n\n")
+    fff.close()
     print(f"\nAverage Precision Across All Classes:{sum(aps)/len(aps)}")
 
 

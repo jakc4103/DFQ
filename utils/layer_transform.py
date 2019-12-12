@@ -11,13 +11,13 @@ tensor_magic_op_supported = ['__add__', 'add', '__iadd__']
 raw_torch_op = {}
 torch_op_supported = ['cat', 'mean']
 raw_func_op = {}
-func_op_sopprted = ['interpolate']
+func_op_sopprted = ['interpolate', 'softmax']
 
 def ___add__(input, *args):
     # global name_tensor_op, idx_tensor_op_quantize
     global raw_tensor_magic_op, module_tensor_op
     _stack = inspect.stack()
-    if 'self' in _stack[1][0].f_locals and '{}_{}_2'.format(_stack[1][0].f_locals['self'].__class__.__name__, _stack[1].lineno) == module_tensor_op.get_name_next():
+    if 'forward' == _stack[1].function and '{}_{}_2'.format('add', _stack[1].lineno) == module_tensor_op.get_module_name():
         input = module_tensor_op(input)
         args = [module_tensor_op(args[0])]
 
@@ -35,7 +35,7 @@ def ___iadd__(input, *args):
     global raw_tensor_magic_op, module_tensor_op
     _stack = inspect.stack()
 
-    if 'self' in _stack[1][0].f_locals and '{}_{}_2'.format(_stack[1][0].f_locals['self'].__class__.__name__, _stack[1].lineno) == module_tensor_op.get_name_next():
+    if 'forward' == _stack[1].function and '{}_{}_2'.format('iadd', _stack[1].lineno) == module_tensor_op.get_module_name():
         input = module_tensor_op(input)
         args = [module_tensor_op(args[0])]
 
@@ -55,7 +55,7 @@ def _add(input,*args):
 def torch_cat(inputs, dim=0):
     global raw_torch_op, module_tensor_op
     _stack = inspect.stack()
-    if 'torch_cat_{}_{}'.format(_stack[1].lineno, len(inputs)) == module_tensor_op.get_name_next():
+    if 'forward' == _stack[1].function and 'torch_cat_{}_{}'.format(_stack[1].lineno, len(inputs)) == module_tensor_op.get_module_name():
         qinputs = []
         for t in inputs:
             qinputs.append(module_tensor_op(t))
@@ -63,7 +63,7 @@ def torch_cat(inputs, dim=0):
         module_tensor_op.add_idx_name_tensor_op()
     else:
         qinputs = inputs
-    
+
     x = raw_torch_op['cat'](tuple(qinputs), dim)
 
     del _stack
@@ -74,7 +74,7 @@ def torch_cat(inputs, dim=0):
 def torch_mean(input, dim=None, keepdim=False, out=None):
     global raw_torch_op, module_tensor_op
     _stack = inspect.stack()
-    if 'torch_mean_{}_1'.format(_stack[1].lineno) == module_tensor_op.get_name_next():
+    if 'forward' == _stack[1].function and 'torch_mean_{}_1'.format(_stack[1].lineno) == module_tensor_op.get_module_name():
         input = module_tensor_op(input)
 
         module_tensor_op.add_idx_name_tensor_op()
@@ -93,7 +93,7 @@ def F_interpolate(input, size=None, scale_factor=None, mode='nearest', align_cor
     global raw_func_op, module_tensor_op
     _stack = inspect.stack()
 
-    if 'F_interpolate_{}_1'.format(_stack[1].lineno) == module_tensor_op.get_name_next():
+    if 'forward' == _stack[1].function and 'F_interpolate_{}_1'.format(_stack[1].lineno) == module_tensor_op.get_module_name():
         input = module_tensor_op(input)
 
         module_tensor_op.add_idx_name_tensor_op()
@@ -104,6 +104,18 @@ def F_interpolate(input, size=None, scale_factor=None, mode='nearest', align_cor
 
     return x
 
+def F_softmax(input, dim=None, _stacklevel=3, dtype=None):
+    global raw_func_op, module_tensor_op
+    _stack = inspect.stack()
+    if 'forward' == _stack[1].function and 'F_softmax_{}_1'.format(_stack[1].lineno) == module_tensor_op.get_module_name():
+        input = module_tensor_op(input)
+        module_tensor_op.add_idx_name_tensor_op()
+    
+    x = raw_func_op['softmax'](input, dim, _stacklevel, dtype)
+
+    del _stack
+
+    return x
 
 def replace_op():
     global tensor_magic_op_supported, raw_tensor_magic_op, torch_op_supported, raw_torch_op, func_op_sopprted, raw_func_op
@@ -153,13 +165,13 @@ def switch_layers(model, transformer, data, module_dict, ignore=['pad'], quant_o
     for ig in ignore:
         idx = 0
         while idx < len(tmp):
-            if ig in tmp[idx]:
+            if ig in tmp[idx][1]:
                 tmp.pop(idx)
                 continue
             idx += 1
 
     tensor_op_quantize = []
-    for t in tmp:
+    for layer_name, t in tmp:
         tok = t.split('_')
         qnum = int(tok[-1])
         while qnum > 0:
@@ -199,8 +211,11 @@ class CustomTensorOP(nn.Module):
     def add_idx_name_tensor_op(self):
         self.idx_name_tensor_op = (self.idx_name_tensor_op + 1) % self.num_op
     
-    def get_name_next(self):
-        return self.name_tensor_op[self.idx_name_tensor_op]
+    def get_module_name(self):
+        return self.name_tensor_op[self.idx_name_tensor_op][1]
+
+    def get_graph_name(self):
+        return self.name_tensor_op[self.idx_name_tensor_op][0]
 
     def get_module_next(self):
         mod = self._modules[str(self.idx_tensor_op)]
@@ -280,7 +295,7 @@ def find_prev_bn(bn_module, relu_attached, bottoms, bot):
     return bn_list, relu_attach_list
 
 
-def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d, N=6):
+def set_quant_minmax(graph, bottoms, output_shape, is_detection=False, bn_type=torch.nn.BatchNorm2d, N=6):
     """!
     This function set the running_min/running_max value of QuantMeasure using the statistics form previous BatchNorm layer.
     Since I handle the values layer by layer, there will be 3 cases in computing min/max:
@@ -295,27 +310,30 @@ def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d,
     For now, if there are multiple BatchNorm stats, I only take the mean of them, and it seems to be working fine w.r.t. the resulting accuracy.
     """
     from collections import OrderedDict
+    from scipy.stats import norm
     print("SET QUANT MIN MAX")
 
-    def get_quant_module(layer):
+    def get_quant_module(layer, bot):
         if type(layer) == str:
             global module_tensor_op, tensor_magic_op_supported, torch_op_supported, func_op_sopprted
-            quant_op = []
-            for op_name in tensor_magic_op_supported + torch_op_supported + func_op_sopprted:
-                quant_op.append(op_name.replace('_', ''))
+            # print("layer name", layer, module_tensor_op.get_graph_name())
+            if module_tensor_op.get_graph_name() == layer:
+                quant_op = []
+                for op_name in tensor_magic_op_supported + torch_op_supported + func_op_sopprted:
+                    quant_op.append(op_name.replace('_', ''))
 
-            for op_name in quant_op:
-                if op_name in layer:
-                    module_list = []
-                    num_op = int(module_tensor_op.get_name_next().split('_')[-1])
-                    
-                    while num_op > 0:
-                        module_list.append(module_tensor_op.get_module_next())
-                        num_op -= 1
+                for op_name in quant_op:
+                    if op_name in layer:
+                        module_list = []
+                        num_op = int(module_tensor_op.get_module_name().split('_')[-1])
+                        
+                        while num_op > 0:
+                            module_list.append(module_tensor_op.get_module_next())
+                            num_op -= 1
 
-                    module_tensor_op.add_idx_name_tensor_op()
+                        module_tensor_op.add_idx_name_tensor_op()
 
-                    return module_list
+                        return module_list
             
         elif hasattr(layer, 'quant'): # special keyword 'quant'
             return [getattr(layer, 'quant')]
@@ -327,6 +345,12 @@ def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d,
     bn_out_shape = {}
     get_max_value = lambda bias, weight, n: float(torch.max(bias + n * weight))
     get_min_value = lambda bias, weight, n: float(torch.min(bias - n * weight))
+    standard_normal = lambda x: torch.from_numpy(norm(0, 1).pdf(x)).float()
+    standard_cdf = lambda x: torch.from_numpy(norm.cdf(x)).float()
+    calculate_mean = lambda weight, bias: weight * standard_normal(-bias/weight) + bias * (1 - standard_cdf(-bias/weight))
+    calculate_var = lambda weight, bias, mean: -standard_cdf(-bias/weight) * (bias*bias + weight*weight + mean * mean - 2 * mean * bias) +\
+                                weight * (bias - 2 * mean) * (standard_normal(-bias/weight)) + \
+                                mean * mean * standard_cdf(-bias/weight)
     for idx_layer in graph:
         # print("process: {}".format(idx_layer))
         bot = bottoms[idx_layer]
@@ -344,13 +368,19 @@ def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d,
             if bot[0] in bn_module:
                 relu_attached[bot[0]] = True
 
-        quant_module = get_quant_module(graph[idx_layer])
+        quant_module = get_quant_module(graph[idx_layer], bot)
         if len(bot) == 1 and bot[0] == 'Data':
-            quant_module[0].running_max.fill_(2.64) # use (1 - mean)/std as in data preprocess
-            quant_module[0].running_min.fill_(-2.11790393) # use (0 - mean)/std as in data preprocess
+            if is_detection:
+                quant_module[0].running_max.fill_(1)
+                quant_module[0].running_min.fill_(-1)
+            else: # segmentation and classification
+                quant_module[0].running_max.fill_(2.64) # use (1 - mean)/std as in data preprocess
+                quant_module[0].running_min.fill_(-2.11790393) # use (0 - mean)/std as in data preprocess
 
         elif quant_module is not None: # set min/max w.r.t. previous layer (batch norm, add)
             bn_list, relu_attach_list = find_prev_bn(bn_module, relu_attached, bottoms, bot[:])
+            is_add = type(idx_layer) == str and 'add' in idx_layer
+            is_cat = type(idx_layer) == str and 'cat' in idx_layer
 
             if len(quant_module) == len(bn_list): # 1 to 1 mapping
                 idx = 0
@@ -381,9 +411,17 @@ def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d,
                     tmp_list.pop(0)
                     bias = layer_cur.fake_bias.detach().clone()
                     weight = layer_cur.fake_weight.detach().clone()
-                    value_min = max(0., get_min_value(bias, weight, N)) if use_relu else get_min_value(bias, weight, N)
-                    value_max = get_max_value(bias, weight, N)
-                    while len(tmp_list) > 1:
+                    if is_add:
+                        if use_relu:
+                            mean = calculate_mean(weight, bias)
+                            var = calculate_var(weight, bias, mean)
+                        else:
+                            mean = bias
+                            var = weight * weight
+                    else:
+                        value_min = max(0., get_min_value(bias, weight, N)) if use_relu else get_min_value(bias, weight, N)
+                        value_max = get_max_value(bias, weight, N)
+                    while len(tmp_list) > 0:
                         idx_bound = 0
                         
                         while idx_bound < len(tmp_list) and len(tmp_list[idx_bound][0][1]) == depth:
@@ -398,22 +436,55 @@ def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d,
                                 node_tmp, use_relu_tmp = tmp_list[idx]
                                 bias = node_tmp[0].fake_bias.detach().clone()
                                 weight = node_tmp[0].fake_weight.detach().clone()
-                                value_min += max(0., get_min_value(bias, weight, N)) if use_relu_tmp else get_min_value(bias, weight, N)
-                                value_max += get_max_value(bias, weight, N)
-                                use_relu = use_relu and use_relu_tmp
+                                if is_add:
+                                    if use_relu_tmp:
+                                        mean_tmp = calculate_mean(weight, bias)
+                                        mean += mean_tmp
+                                        var += calculate_var(weight, bias, mean_tmp)
+                                    else:
+                                        mean += bias
+                                        var += weight * weight
+                                else:
+                                    if is_cat:
+                                        value_min = min(value_min, max(0., get_min_value(bias, weight, N)) if use_relu_tmp else get_min_value(bias, weight, N))
+                                        value_max = max(value_max, get_max_value(bias, weight, N))
+                                    else:
+                                        value_min += max(0., get_min_value(bias, weight, N)) if use_relu_tmp else get_min_value(bias, weight, N)
+                                        value_max += get_max_value(bias, weight, N)
+                                
                             tmp_list = tmp_list[idx_bound:]
-                            value_min /= (idx_bound + 1)
-                            value_max /= (idx_bound + 1)
-                    bn_res[key] = (value_min, value_max)
-
-                value_min = 0
-                value_max = 0
-                for key in bn_res:
-                    value_min += bn_res[key][0]
-                    value_max += bn_res[key][1]
+                            if not is_add and not is_cat:
+                                value_min /= (idx_bound + 1)
+                                value_max /= (idx_bound + 1)
+                    if is_add:
+                        bn_res[key] = (mean, var)
+                    else:
+                        bn_res[key] = (value_min, value_max)
                 
-                value_min /= len(bn_res)
-                value_max /= len(bn_res)
+                if is_add:
+                    mean = 0
+                    var = 0
+                    for key in bn_res:
+                        mean += bn_res[key][0]
+                        var += bn_res[key][1]
+
+                    value_min = get_min_value(mean, torch.sqrt(var), N)
+                    value_max = get_max_value(mean, torch.sqrt(var), N)
+                else:
+                    # value_min = 1e10
+                    # value_max = 1e-10
+                    value_min = 0
+                    value_max = 0
+                    for key in bn_res:
+                        if is_cat:
+                            value_min = min(value_min, bn_res[key][0])
+                            value_max = max(value_max, bn_res[key][1])
+                        else:
+                            value_min += bn_res[key][0]
+                            value_max += bn_res[key][1]
+                    if not is_cat:
+                        value_min /= len(bn_res)
+                        value_max /= len(bn_res)
 
                 # TODO: weighting w.r.t. tensor size
 
@@ -438,9 +509,19 @@ def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d,
                     tmp_list.pop(0)
                     bias = layer_cur.fake_bias.detach().clone()
                     weight = layer_cur.fake_weight.detach().clone()
-                    value_min = max(0., get_min_value(bias, weight, N)) if use_relu else get_min_value(bias, weight, N)
-                    value_max = get_max_value(bias, weight, N)
-                    while len(tmp_list) > 1:
+
+                    if is_add:
+                        if use_relu:
+                            mean = calculate_mean(weight, bias)
+                            var = calculate_var(weight, bias, mean)
+                        else:
+                            mean = bias
+                            var = weight * weight
+                    else:
+                        value_min = max(0., get_min_value(bias, weight, N)) if use_relu else get_min_value(bias, weight, N)
+                        value_max = get_max_value(bias, weight, N)
+                    
+                    while len(tmp_list) > 0:
                         idx_bound = 0
                         
                         while idx_bound < len(tmp_list) and len(tmp_list[idx_bound][0][1]) == depth:
@@ -455,18 +536,40 @@ def set_quant_minmax(graph, bottoms, output_shape, bn_type=torch.nn.BatchNorm2d,
                                 node_tmp, use_relu_tmp = tmp_list[idx]
                                 bias = node_tmp[0].fake_bias.detach().clone()
                                 weight = node_tmp[0].fake_weight.detach().clone()
-                                value_min += max(0., get_min_value(bias, weight, N)) if use_relu_tmp else get_min_value(bias, weight, N)
-                                value_max += get_max_value(bias, weight, N)
-                                use_relu = use_relu and use_relu_tmp
+                                if is_add:
+                                    if use_relu_tmp:
+                                        mean_tmp = calculate_mean(weight, bias)
+                                        mean += mean_tmp
+                                        var += calculate_var(weight, bias, mean_tmp)
+                                    else:
+                                        mean += bias
+                                        var += weight * weight
+                                else:
+                                    # value_min = min(value_min, max(0., get_min_value(bias, weight, N)) if use_relu_tmp else get_min_value(bias, weight, N))
+                                    # value_max = max(value_max, get_max_value(bias, weight, N))
+                                    value_min += max(0., get_min_value(bias, weight, N)) if use_relu_tmp else get_min_value(bias, weight, N)
+                                    value_max += get_max_value(bias, weight, N)
+
                             tmp_list = tmp_list[idx_bound:]
-                            value_min /= (idx_bound + 1)
-                            value_max /= (idx_bound + 1)
-                    bn_res[key] = (value_min, value_max)
+                            if not is_add:
+                                value_min /= (idx_bound + 1)
+                                value_max /= (idx_bound + 1)
+                    if is_add:
+                        bn_res[key] = (mean, var)
+                    else:
+                        bn_res[key] = (value_min, value_max)
+                    
 
                 idx = 0
                 assert len(bn_res) == len(quant_module), 'LENGTH NOT EQUAL {} vs {}'.format(len(bn_res), len(quant_module))
                 while idx < len(bn_res):
-                    value_min, value_max = bn_res[str(idx)]
+                    if is_add:
+                        mean, var = bn_res[str(idx)]
+                        value_min = get_min_value(mean, torch.sqrt(var), N)
+                        value_max = get_max_value(mean, torch.sqrt(var), N)
+                    else:
+                        value_min, value_max = bn_res[str(idx)]
+
                     # print("type 3, max {}, min {}".format(value_max, value_min))
                     quant_module[idx].running_max.fill_(value_max)
                     quant_module[idx].running_min.fill_(value_min)

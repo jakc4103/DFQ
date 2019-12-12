@@ -17,7 +17,7 @@ class VOCSegmentation(Dataset):
 
     def __init__(self,
                  args,
-                 base_dir='D:/workspace/dataset/VOCdevkit/VOC2012',
+                 base_dir='/media/jakc4103/Toshiba/workspace/dataset/VOCdevkit/VOC2012/',
                  split='val',
                  label='SegmentationClass'
                  ):
