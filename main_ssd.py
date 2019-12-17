@@ -12,13 +12,14 @@ import pathlib
 import numpy as np
 import logging
 import sys
+import time
 from modeling.detection.mobilenet_v2_ssd_lite import create_mobilenetv2_ssd_lite, create_mobilenetv2_ssd_lite_predictor
 
 from utils.relation import create_relation
 from dfq import cross_layer_equalization, bias_absorption, bias_correction, clip_weight
-from utils.layer_transform import switch_layers, replace_op, restore_op, set_quant_minmax, merge_batchnorm
+from utils.layer_transform import switch_layers, replace_op, restore_op, set_quant_minmax, merge_batchnorm, quantize_targ_layer
 from PyTransformer.transformers.torchTransformer import TorchTransformer
-from PyTransformer.transformers.quantize import QuantConv2d, QuantLinear
+from utils.quantize import QuantConv2d, QuantLinear, QuantNConv2d, QuantNLinear, QuantMeasure
 
 
 parser = argparse.ArgumentParser(description="SSD Evaluation on VOC Dataset.")
@@ -28,7 +29,7 @@ parser.add_argument("--trained_model", type=str, default='modeling/detection/mb2
 
 parser.add_argument("--dataset_type", default="voc07", type=str,
                     help='Specify dataset type. Currently support voc and open_images.')
-parser.add_argument("--dataset", type=str, default='/media/jakc4103/Toshiba/workspace/dataset/VOCdevkit/VOC2007/', help="The root directory of the VOC dataset or Open Images dataset.")
+parser.add_argument("--dataset", type=str, default='/media/jakc4103/Dec19/workspace/dataset/VOCdevkit/VOC2007/', help="The root directory of the VOC dataset or Open Images dataset.")
 parser.add_argument("--label_file", type=str, default='modeling/detection/voc-model-labels.txt', help="The label file path.")
 parser.add_argument("--use_cuda", type=str2bool, default=True)
 parser.add_argument("--use_2007_metric", type=str2bool, default=True)
@@ -43,6 +44,8 @@ parser.add_argument("--correction", action='store_true')
 parser.add_argument("--absorption", action='store_true')
 parser.add_argument("--relu", action='store_true')
 parser.add_argument("--clip_weight", action='store_true')
+parser.add_argument("--trainable", action='store_true')
+parser.add_argument("--equal_range", type=float, default=1e8)
 args = parser.parse_args()
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() and args.use_cuda else "cpu")
 
@@ -142,7 +145,7 @@ if __name__ == '__main__':
     if args.dataset_type == "voc07":
         dataset = VOCDataset(args.dataset, is_test=True)
     elif args.dataset_type == "voc12":
-        dataset = VOCDataset('/media/jakc4103/Toshiba/workspace/dataset/VOCdevkit/VOC2012/', is_test=False)
+        dataset = VOCDataset('/media/jakc4103/Dec19/workspace/dataset/VOCdevkit/VOC2012/', is_test=False)
     elif args.dataset_type == 'open_images':
         dataset = OpenImagesDataset(args.dataset, dataset_type="test")
 
@@ -156,7 +159,7 @@ if __name__ == '__main__':
     elif args.net == 'sq-ssd-lite':
         net = create_squeezenet_ssd_lite(len(class_names), is_test=True)
     elif args.net == 'mb2-ssd-lite':
-        net = create_mobilenetv2_ssd_lite(len(class_names), width_mult=args.mb2_width_mult, is_test=True)
+        net = create_mobilenetv2_ssd_lite(len(class_names), width_mult=args.mb2_width_mult, is_test=True, quantize=args.quantize)
     else:
         logging.fatal("The net type is wrong. It should be one of vgg16-ssd, mb1-ssd and mb1-ssd-lite.")
         parser.print_help(sys.stderr)
@@ -171,26 +174,27 @@ if __name__ == '__main__':
     transformer = TorchTransformer()
     module_dict = {}
     if args.quantize:
-        module_dict[1] = [(torch.nn.Conv2d, QuantConv2d), (torch.nn.Linear, QuantLinear)]
+        if args.trainable:
+            module_dict[1] = [(torch.nn.Conv2d, QuantConv2d), (torch.nn.Linear, QuantLinear)]
+        else:
+            module_dict[1] = [(torch.nn.Conv2d, QuantNConv2d), (torch.nn.Linear, QuantNLinear)]
     
     if args.relu:
         module_dict[0] = [(torch.nn.ReLU6, torch.nn.ReLU)]
 
-    net = switch_layers(net, transformer, data, module_dict, quant_op=args.quantize)
-
-    # use cpu to process
-    transformer = TorchTransformer()
-    net = net.cpu()
     # transformer.summary(net, data)
     # transformer.visualize(net, data, 'graph_ssd', graph_size=120)
     
-    transformer._build_graph(net, data) # construt graph after all state_dict loaded
+    net, transformer = switch_layers(net, transformer, data, module_dict, ignore_layer=[QuantMeasure], quant_op=args.quantize)
 
     graph = transformer.log.getGraph()
     bottoms = transformer.log.getBottoms()
     output_shape = transformer.log.getOutShapes()
     if args.quantize:
-        targ_layer = [QuantConv2d, QuantLinear]
+        if args.trainable:
+            targ_layer = [QuantConv2d, QuantLinear]
+        else:
+            targ_layer = [QuantNConv2d, QuantNLinear]
     else:
         targ_layer = [torch.nn.Conv2d, torch.nn.Linear]
     net = merge_batchnorm(net, graph, bottoms, targ_layer)
@@ -198,7 +202,7 @@ if __name__ == '__main__':
     #create relations
     if args.equalize:
         res = create_relation(graph, bottoms, targ_layer)
-        cross_layer_equalization(graph, res, visualize_state=False, converge_thres=2e-7)
+        cross_layer_equalization(graph, res, targ_layer, visualize_state=False, converge_thres=2e-7, s_range=(1/args.equal_range, args.equal_range))
 
     if args.absorption:
         bias_absorption(graph, res, bottoms, 3)
@@ -210,6 +214,8 @@ if __name__ == '__main__':
         bias_correction(graph, bottoms, targ_layer)
 
     if args.quantize:
+        if not args.trainable:
+            graph = quantize_targ_layer(graph, targ_layer)
         set_quant_minmax(graph, bottoms, output_shape, is_detection=True)
     
     net = net.to(DEVICE)
@@ -269,9 +275,6 @@ if __name__ == '__main__':
                 )
     aps = []
     print("\n\nAverage Precision Per-class:")
-    fff = open('ssd_{}_result.txt'.format(args.dataset_type), 'a+')
-    fff.write("quant: {}, relu: {}, equalize: {}, absorption: {}, correction: {}, clip_weight: {}\n".format(
-        args.quantize, args.relu, args.equalize, args.absorption, args.correction, args.clip_weight))
     for class_index, class_name in enumerate(class_names):
         if class_index == 0:
             continue
@@ -288,11 +291,3 @@ if __name__ == '__main__':
         fff.write("{}: {}\n".format(class_name, ap))
         aps.append(ap)
         print(f"{class_name}: {ap}")
-    fff.write("Average Precision: {}\n".format(sum(aps)/len(aps)))
-    fff.write("="*150)
-    fff.write("\n\n")
-    fff.close()
-    print(f"\nAverage Precision Across All Classes:{sum(aps)/len(aps)}")
-
-
-

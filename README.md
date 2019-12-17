@@ -10,12 +10,12 @@ PyTorch implementation of [Data Free Quantization Through Weight Equalization an
 
 model/precision | FP32 | Int8*|
 -----------|------|------|
-Original   | 71.81 | 0.14
+Original   | 71.81 | 0.09
 +ReLU | 71.78 | 0.15
-+ReLU+LE | 71.78 | 70.39
-+ReLU+BC  |  --  | 56.25
-+ReLU+BC +clip_15  |  --  | 65.77
-+ReLU+LE+BC  |  --  | 70.92
++ReLU+LE | 71.78 | 70.32
++ReLU+BC  |  --  | 56.35
++ReLU+BC +clip_15  |  --  | 65.76
++ReLU+LE+BC  |  --  | 70.93
 
 </td></tr> </table>
 
@@ -27,23 +27,23 @@ Original   | 71.81 | 0.14
 
 model/precision | FP32  | Int8*|
 ----------------|-------|-------|
-Original  | 70.81 |  59.71
-+ReLU     | 70.72 |  60.17
-+ReLU+LE  | 70.72 | 65.85
-+ReLU+BC  |  --  |  68.8
-+ReLU+BC +clip_15  |  --  | 65.5
-+ReLU+LE+BC  |  --  | 69.14
+Original  | 70.81 |  59.63
++ReLU     | 70.72 |  60.1
++ReLU+LE  | 70.72 | 65.61
++ReLU+BC  |  --  |  68.7
++ReLU+BC +clip_15  |  --  | 65.69
++ReLU+LE+BC  |  --  | 69.27
 
 </td><td>
 
 model/precision | FP32  | Int8*  
 ----------------|-------|-------  
-Original | 74.54 |  62.24
-+ReLU    | 74.35 |  61.39
-+ReLU+LE  | 74.35 | 69.55
-+ReLU+BC  |  --  |  72.4
-+ReLU+BC +clip_15  |  --  | 68.85
-+ReLU+LE+BC  |  --  | 73.45
+Original | 74.54 |  62.5
++ReLU    | 74.35 |  61.54
++ReLU+LE  | 74.35 | 69.24
++ReLU+BC  |  --  |  71.67
++ReLU+BC +clip_15  |  --  | 68.89
++ReLU+LE+BC  |  --  | 72.99
 
 </td></tr> </table>
 
@@ -51,28 +51,28 @@ Original | 74.54 |  62.24
 - Tested with [MobileNetV2 SSD-Lite model](https://github.com/qfgaohao/pytorch-ssd)
 
 <table>
-<tr><th>Pascal VOC 2012 val set (mAP)   </th><th>Pascal VOC 2007 test set (mAP)  </th></tr>
+<tr><th>Pascal VOC 2012 val set (mAP with 12 metric)   </th><th>Pascal VOC 2007 test set (mAP with 07 metric)  </th></tr>
 <tr><td>
 
 model/precision | FP32 | Int8*|
 -----------|------|------|
-Original   | 70.95 | 
-+ReLU     | 67.44 | 
-+ReLU+LE  | 67.44 | 
-+ReLU+BC  |  --  |
-+ReLU+BC +clip_15  |  --  |
-+ReLU+LE+BC  |  --  |
+Original   | 70.95 | 65.44
++ReLU     | 67.44 | 62.59
++ReLU+LE  | 67.44 | 63.56
++ReLU+BC  |  --  |  63.26
++ReLU+BC +clip_15  |  --  | 63.34
++ReLU+LE+BC  |  --  | 63.65
 
 </td><td>
 
 model/precision | FP32  | Int8*  
 ----------------|-------|-------  
-Original | 60.5 |  
-+ReLU     | 57.61 |  
-+ReLU+LE  | 57.61 | 
-+ReLU+BC  |  --  |
-+ReLU+BC +clip_15  |  --  |
-+ReLU+LE+BC  |  --  |
+Original | 60.5 |  56.28
++ReLU     | 57.61 | 53.12
++ReLU+LE  | 57.61 | 53.70
++ReLU+BC  |  --  | 52.69
++ReLU+BC +clip_15  |  --  | 53.47
++ReLU+LE+BC  |  --  | 53.72
 
 </td></tr> </table>
 
@@ -112,8 +112,9 @@ python main_cls.py --quantize --relu --equalize --correction
 - [x] cross layer equalization
 - [ ] high bias absorption
 - [x] data-free bias correction
-- [ ] test with detection model
+- [x] test with detection model
 - [x] test with classification model
+- [ ] True Int8 inference
 
 ## Acknowledgment
 - https://github.com/jfzhang95/pytorch-deeplab-xception

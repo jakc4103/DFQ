@@ -14,9 +14,9 @@ from utils.metrics import Evaluator
 
 from utils.relation import create_relation
 from dfq import cross_layer_equalization, bias_absorption, bias_correction, clip_weight
-from utils.layer_transform import switch_layers, replace_op, restore_op, set_quant_minmax, merge_batchnorm#, LayerTransform
+from utils.layer_transform import switch_layers, replace_op, restore_op, set_quant_minmax, merge_batchnorm, quantize_targ_layer#, LayerTransform
 from PyTransformer.transformers.torchTransformer import TorchTransformer
-from PyTransformer.transformers.quantize import QuantConv2d
+from utils.quantize import QuantConv2d, QuantNConv2d, QuantMeasure
 
 def get_argument():
     parser = argparse.ArgumentParser()
@@ -27,6 +27,7 @@ def get_argument():
     parser.add_argument("--relu", action='store_true')
     parser.add_argument("--clip_weight", action='store_true')
     parser.add_argument("--dataset", type=str, default="voc12")
+    parser.add_argument("--trainable", action='store_true')
     return parser.parse_args()
 
 def estimate_stats(model, state_dict, data, num_epoch=10, path_save='modeling/data_dependent_QuantConv2dAdd.pth'):
@@ -104,27 +105,27 @@ def main():
 
     module_dict = {}
     if args.quantize:
-        module_dict[1] = [(nn.Conv2d, QuantConv2d)]
+        if args.trainable:
+            module_dict[1] = [(nn.Conv2d, QuantConv2d)]
+        else:
+            module_dict[1] = [(nn.Conv2d, QuantNConv2d)]
     
     if args.relu:
         module_dict[0] = [(torch.nn.ReLU6, torch.nn.ReLU)]
 
-    model = switch_layers(model, transformer, data, module_dict, quant_op=args.quantize)
-
-    # use cpu to process
-    transformer = TorchTransformer()
-    model = model.cpu()
-
     # transformer.summary(model, data)
     # transformer.visualize(model, data, 'graph_deeplab', graph_size=120)
-    transformer._build_graph(model, data) # construt graph after all state_dict loaded
 
+    model, transformer = switch_layers(model, transformer, data, module_dict, ignore_layer=[QuantMeasure], quant_op=args.quantize)
     graph = transformer.log.getGraph()
     bottoms = transformer.log.getBottoms()
     output_shape = transformer.log.getOutShapes()
 
     if args.quantize:
-        targ_layer = [QuantConv2d]
+        if args.trainable:
+            targ_layer = [QuantConv2d]
+        else:
+            targ_layer = [QuantNConv2d]
     else:
         targ_layer = [nn.Conv2d]
     model = merge_batchnorm(model, graph, bottoms, targ_layer)
@@ -132,7 +133,7 @@ def main():
     #create relations
     if args.equalize:
         res = create_relation(graph, bottoms, targ_layer)
-        cross_layer_equalization(graph, res, visualize_state=False)
+        cross_layer_equalization(graph, res, targ_layer, visualize_state=False)
 
     if args.absorption:
         bias_absorption(graph, res, bottoms, 3)
@@ -144,6 +145,8 @@ def main():
         bias_correction(graph, bottoms, targ_layer)
 
     if args.quantize:
+        if not args.trainable:
+            graph = quantize_targ_layer(graph, targ_layer)
         set_quant_minmax(graph, bottoms, output_shape)
     
     model = model.cuda()
