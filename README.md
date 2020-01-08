@@ -122,3 +122,4 @@ python main_cls.py --quantize --relu --equalize --correction
 - https://github.com/qfgaohao/pytorch-ssd
 - https://github.com/tonylins/pytorch-mobilenet-v2
 - https://github.com/xxradon/PytorchToCaffe
+- https://github.com/amirgholami/ZeroQ

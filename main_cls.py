@@ -16,12 +16,15 @@ from dfq import cross_layer_equalization, bias_absorption, bias_correction, _qua
 from utils.layer_transform import switch_layers, replace_op, restore_op, set_quant_minmax, merge_batchnorm, quantize_targ_layer#, LayerTransform
 from PyTransformer.transformers.torchTransformer import TorchTransformer
 
-from utils.quantize import QuantConv2d, QuantLinear, QuantNConv2d, QuantNLinear, QuantMeasure
+from utils.quantize import QuantConv2d, QuantLinear, QuantNConv2d, QuantNLinear, QuantMeasure, QConv2d, QLinear
+from ZeroQ.distill_data import getDistilData
+from improve_dfq import update_scale, transform_quant_layer, set_scale
 
 def get_argument():
     parser = argparse.ArgumentParser()
     parser.add_argument("--quantize", action='store_true')
     parser.add_argument("--equalize", action='store_true')
+    parser.add_argument("--distill", action='store_true')
     parser.add_argument("--correction", action='store_true')
     parser.add_argument("--absorption", action='store_true')
     parser.add_argument("--relu", action='store_true')
@@ -62,15 +65,22 @@ def main():
     args = get_argument()
     assert args.relu or args.relu == args.equalize, 'must replace relu6 to relu while equalization'
     assert args.equalize or args.absorption == args.equalize, 'must use absorption with equalize'
+    assert args.equalize == args.distill, 'must use equalization with distill'
     data = torch.ones((4, 3, 224, 224))#.cuda()
 
     model = mobilenet_v2('modeling/classification/mobilenetv2_1.0-f2a8633.pth.tar')
+    model_original = mobilenet_v2('modeling/classification/mobilenetv2_1.0-f2a8633.pth.tar')
     model.eval()
     
+    if args.distill:
+        data_distill = getDistilData(model, 'imagenet', 32, gpu=False)
+
     transformer = TorchTransformer()
     module_dict = {}
     if args.quantize:
-        if args.trainable:
+        if args.distill:
+            module_dict[1] = [(nn.Conv2d, QConv2d), (nn.Linear, QLinear)]
+        elif args.trainable:
             module_dict[1] = [(nn.Conv2d, QuantConv2d), (nn.Linear, QuantLinear)]
         else:
             module_dict[1] = [(nn.Conv2d, QuantNConv2d), (nn.Linear, QuantNLinear)]
@@ -87,7 +97,9 @@ def main():
     bottoms = transformer.log.getBottoms()
     output_shape = transformer.log.getOutShapes()
     if args.quantize:
-        if args.trainable:
+        if args.distill:
+            targ_layer = [QConv2d, QLinear]
+        elif args.trainable:
             targ_layer = [QuantConv2d, QuantLinear]
         else:
             targ_layer = [QuantNConv2d, QuantNLinear]
@@ -99,7 +111,9 @@ def main():
     #create relations
     if args.equalize:
         res = create_relation(graph, bottoms, targ_layer)
-        cross_layer_equalization(graph, res, targ_layer, visualize_state=False, converge_thres=2e-7)
+        cross_layer_equalization(graph, res, targ_layer, visualize_state=False, converge_thres=2e-1)
+        if args.distill:
+            set_scale(res, graph)
     
     if args.absorption:
         bias_absorption(graph, res, bottoms, 3)
@@ -111,10 +125,14 @@ def main():
         bias_correction(graph, bottoms, targ_layer)
 
     if args.quantize:
-        if not args.trainable:
+        if not args.trainable and not args.distill:
             graph = quantize_targ_layer(graph, targ_layer)
         set_quant_minmax(graph, bottoms, output_shape)
-    
+
+    if args.distill:
+        model = update_scale(model, model_original, data_distill)
+        model = transform_quant_layer(model, graph, res)
+
     model = model.cuda()
     model.eval()
 

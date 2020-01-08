@@ -118,19 +118,52 @@ class QConv2d(nn.Conv2d):
     """docstring for QConv2d."""
 
     def __init__(self, in_channels, out_channels, kernel_size,
-                 stride=1, padding=0, dilation=1, groups=1, bias=True, num_bits=8, num_bits_weight=None):
+                 stride=1, padding=0, dilation=1, groups=1, bias=True, num_bits=8, num_bits_bias=16, momentum=0.1):
         super(QConv2d, self).__init__(in_channels, out_channels, kernel_size,
                                       stride, padding, dilation, groups, bias)
         self.num_bits = num_bits
-        self.num_bits_weight = num_bits_weight or num_bits
+        self.num_bits_bias = num_bits_bias
+        self.quant = QuantMeasure(num_bits=num_bits, momentum=momentum)
+        self.scale = None
+        self.scale_prev = None
 
+    def set_scale(self, scale=None, scale_prev=None):
+        """
+        scale_prev should be the same parameter as 'scale' from previous layer 
+        """
+        if scale is not None:
+            self.scale = nn.Parameter(scale)
+        if scale_prev is not None:
+            self.scale_prev = scale_prev
+
+    def merge_scale_to_weight(self):
+        if self.scale_prev is not None:
+            step = self.weight.shape[0] // self.groups
+            for g in range(self.groups):
+                self.weight[g*step:(g+1)*step] = self.weight[g*step:(g+1)*step] * self.scale_prev[g*self.weight.shape[1]:(g+1)*self.weight.shape[1]]
+            self.scale_prev = None
+
+        if self.scale is not None:
+            self.weight = self.weight * self.scale.view(-1, 1, 1, 1)
+            self.scale = None
 
     def forward(self, input):
-        qweight = quantize(self.weight, num_bits=self.num_bits_weight,
+        input = self.quant(input)        
+        if self.scale_prev is not None:
+            # multiply by scale
+            step = self.weight.shape[0] // self.groups
+            for g in range(self.groups):
+                self.weight[g*step:(g+1)*step] = self.weight[g*step:(g+1)*step] * self.scale_prev[g*self.weight.shape[1]:(g+1)*self.weight.shape[1]]
+
+        if self.scale is not None:
+            # multiply by scale
+            self.weight = self.weight * self.scale.view(-1, 1, 1, 1)
+
+        qweight = quantize(self.weight, num_bits=self.num_bits,
                            min_value=float(self.weight.min()),
                            max_value=float(self.weight.max()))
         if self.bias is not None:
-            qbias = quantize(self.bias, num_bits=self.num_bits_weight)
+            qbias = quantize(self.bias, num_bits=self.num_bits_bias)
         else:
             qbias = None
         
@@ -189,18 +222,44 @@ class QuantNConv2d(nn.Conv2d):
 class QLinear(nn.Linear):
     """docstring for QConv2d."""
 
-    def __init__(self, in_features, out_features, bias=True, num_bits=8, num_bits_weight=None, num_bits_grad=None, biprecision=False):
+    def __init__(self, in_features, out_features, bias=True, num_bits=8, num_bits_bias=16, momentum=0.1):
         super(QLinear, self).__init__(in_features, out_features, bias)
         self.num_bits = num_bits
-        self.num_bits_weight = num_bits_weight or num_bits
+        self.num_bits_bias = num_bits_bias
+        self.quant = QuantMeasure(num_bits=num_bits, momentum=momentum)
+        self.scale = None
+        self.scale_prev = None
 
+    def set_scale(self, scale=None, scale_prev=None):
+        if scale is not None:
+            self.scale = nn.Parameter(scale)
+        if scale_prev is not None:
+            self.scale_prev = scale_prev
+
+    def merge_scale_to_weight(self):
+        if self.scale_prev is not None:
+            self.weight = self.weight * self.scale_prev.view(1, -1)
+            self.scale_prev = None
+
+        if self.scale is not None:
+            self.weight = self.weight * self.scale.view(-1, 1)
+            self.scale = None
 
     def forward(self, input):
-        qweight = quantize(self.weight, num_bits=self.num_bits_weight,
+        input = self.quant(input)
+        if self.scale_prev is not None:
+            # multiply by scale
+            self.weight = self.weight * self.scale_prev.view(1, -1)
+
+        if self.scale is not None:
+            # multiply by scale
+            self.weight = self.weight * self.scale_prev.view(-1, 1)
+
+        qweight = quantize(self.weight, num_bits=self.num_bits,
                            min_value=float(self.weight.min()),
                            max_value=float(self.weight.max()))
         if self.bias is not None:
-            qbias = quantize(self.bias, num_bits=self.num_bits_weight)
+            qbias = quantize(self.bias, num_bits=self.num_bits_bias)
         else:
             qbias = None
 
