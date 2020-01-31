@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import inspect
 
-from utils.quantize import QConv2d, ReLUQuant, QuantConv2d, QuantLinear, quantize, QuantMeasure
+from utils.quantize import QConv2d, QuantConv2d, QuantNConv2d, QLinear, QuantLinear, QuantNLinear, quantize, QuantMeasure
 tensor_target = torch.Tensor
 raw_tensor_magic_op = {}
 tensor_target = torch.Tensor
@@ -276,14 +276,15 @@ def merge_batchnorm(model, graph, bottoms, targ_type=[QConv2d]):
     return model
 
 
-def quantize_targ_layer(graph, targ_type, bits_bias=16):
+def quantize_targ_layer(graph, bit_weight=8, bits_bias=16, targ_type=None):
     print("Quantizing Layer parameters")
+    assert targ_type != None, "targ_type cannot be None!"
     for layer_idx in graph:
         if type(graph[layer_idx]) in targ_type:
             with torch.no_grad():
                 # quantization behave differently on cpu and gpu
                 param = graph[layer_idx].weight.detach()#.cuda()
-                tmp = quantize(param, 8, float(param.min()), float(param.max()))
+                tmp = quantize(param, bit_weight, float(param.min()), float(param.max()))
 
                 graph[layer_idx].weight.data.copy_(tmp.data.cpu())
 
@@ -300,19 +301,32 @@ def find_prev_bn(bn_module, relu_attached, graph, bottoms, bot):
     """
     bot_tmp = list(zip(bot, [str(x) for x in range(len(bot))]))
     type_tmp = {}
+    targ_without_bn = {}
     for ii in range(len(bot)):
         type_tmp[str(ii)] = 'one'
     bn_list = []
     relu_attach_list = []
     connect_type_list = []
+    cat_add_found = False
     while len(bot_tmp) > 0:
         idx_bot, bid = bot_tmp.pop(0)
 
         if type(graph[idx_bot]) == str:
             if 'add' in idx_bot:
                 type_tmp[bid] = 'add'
+                cat_add_found = True
             elif 'cat' in idx_bot:
                 type_tmp[bid] = 'cat'
+                cat_add_found = True
+
+        elif not cat_add_found and type(graph[idx_bot]) in [nn.Conv2d, QConv2d, QuantConv2d, QuantNConv2d, nn.Linear, QLinear, QuantLinear, QuantNLinear]:
+            print("Warning: {} layer before batch norm layer detected".format(type(graph[idx_bot])))
+            if bid[0] in targ_without_bn:
+                assert False, "Multiple conv/linear layer without batch_norm is not supported."
+            if type(graph[idx_bot]) in [nn.Conv2d, QConv2d, QuantConv2d, QuantNConv2d]:
+                targ_without_bn[bid[0]] = ("conv", graph[idx_bot])
+            else:
+                targ_without_bn[bid[0]] = ("linear", graph[idx_bot])
 
         if idx_bot not in bn_module:
             bot_tmp.extend(list(zip(bottoms[idx_bot], [bid + bid[0]]*len(bottoms[idx_bot]))))
@@ -322,13 +336,13 @@ def find_prev_bn(bn_module, relu_attached, graph, bottoms, bot):
             relu_attach_list.append(relu_attached[idx_bot])
             connect_type_list.append(type_tmp[bid])
 
-    return bn_list, relu_attach_list, connect_type_list
+    return bn_list, relu_attach_list, connect_type_list, targ_without_bn
 
 
-def set_quant_minmax(graph, bottoms, output_shape, is_detection=False, bn_type=torch.nn.BatchNorm2d, N=6):
+def set_quant_minmax(graph, bottoms, output_shape, is_detection=False, bn_type=torch.nn.BatchNorm2d, N=6, verbose=True):
     """!
     This function set the running_min/running_max value of QuantMeasure using the statistics form previous BatchNorm layer.
-    Since I handle the values layer by layer, there will be 3 cases in computing min/max:
+    Since I handle the values layer by layer, there will be 3 + 1 cases in computing min/max:
         a. 1 to 1 mapping. ex: BatchNorm->ReLU->'QuantConv'
         b. 1 to many mapping. ex: BatchNorm->ReLU->
                                                     QuantAdd->'QuantConv'
@@ -337,17 +351,22 @@ def set_quant_minmax(graph, bottoms, output_shape, is_detection=False, bn_type=t
                                                QuantAdd->
                              BatchNorm->ReLU->     ;      'QuantAdd'
                                         BatchNorm->ReLU->
+
+        d. layers without batch normalization. ex: BatchNorm->ReLU->QuantConv->'Concat' (in last layer of detection branch, SSD model)
     
     For elementwise addition, the input activations are assumed to be independent gaussian distributions.
     Thus I accumulate the mean and variance of distributions, then compute min/max at final step.
 
     For concatination, I will take the min/max values of input activations.
 
+    For (d.) case, I use the min/max values of last available batch_norm layer to convolve with weight in conv layer.
+
     Otherwise, the min/max mean value of all input activations is used.
     """
     from collections import OrderedDict
     from scipy.stats import norm
-    print("SET QUANT MIN MAX")
+    if verbose:
+        print("SET QUANT MIN MAX")
 
     def get_quant_module(layer, bot):
         if type(layer) == str:
@@ -414,14 +433,37 @@ def set_quant_minmax(graph, bottoms, output_shape, is_detection=False, bn_type=t
                 quant_module[0].running_min.fill_(-2.11790393) # use (0 - mean)/std as in data preprocess
 
         elif quant_module is not None: # set min/max w.r.t. previous layer (batch norm, add)
-            bn_list, relu_attach_list, connect_type_list = find_prev_bn(bn_module, relu_attached, graph, bottoms, bot[:])
+            bn_list, relu_attach_list, connect_type_list, targ_without_bn = find_prev_bn(bn_module, relu_attached, graph, bottoms, bot[:])
             if len(quant_module) == len(bn_list): # 1 to 1 mapping
                 idx = 0
                 while idx < len(bn_list):
-                    bias = getattr(bn_list[idx][0], 'fake_bias')
-                    weight = getattr(bn_list[idx][0], 'fake_weight')
-                    value_max = get_max_value(bias, weight, N)
-                    value_min = get_min_value(bias, weight, N) if not relu_attach_list[idx] else 0.
+                    bias = getattr(bn_list[idx][0], 'fake_bias').view(-1)
+                    weight = torch.abs(getattr(bn_list[idx][0], 'fake_weight').view(-1))
+                    
+                    if bn_list[idx][1][0] in targ_without_bn:
+                        # case (d.)
+                        layer_type, obj_layer = targ_without_bn[bn_list[idx][1][0]]
+                        layer_weight = getattr(obj_layer, 'weight').detach().data
+                        layer_bias = getattr(obj_layer, 'bias').detach().data
+
+                        if layer_type == 'conv':
+                            fake_input = torch.empty((128, layer_weight.size(1), layer_weight.size(2), layer_weight.size(3)))
+                            for idx_tmp in range(fake_input.shape[1]):
+                                nn.init.normal_(fake_input[:, idx_tmp], mean=bias[idx_tmp], std=weight[idx_tmp])
+                            fake_out = torch.nn.functional.conv2d(fake_input, layer_weight, layer_bias, 1, 0, 1, getattr(obj_layer, 'groups'))
+                            
+                        else:
+                            fake_input = torch.empty((128, layer_weight.size(1)))
+                            for idx_tmp in range(fake_input.shape[1]):
+                                nn.init.normal_(fake_input[:, idx_tmp], mean=bias[idx_tmp], std=weight[idx_tmp])
+                            fake_out = torch.nn.functional.linear(fake_input, layer_weight, layer_bias)
+
+                        value_max = fake_out.max()
+                        value_min = fake_out.min()
+
+                    else:
+                        value_max = get_max_value(bias, weight, N)
+                        value_min = get_min_value(bias, weight, N) if not relu_attach_list[idx] else 0.
                     # print("type 1, max {}, min {}".format(value_max, value_min))
                     quant_module[idx].running_max.fill_(value_max)
                     quant_module[idx].running_min.fill_(value_min)
