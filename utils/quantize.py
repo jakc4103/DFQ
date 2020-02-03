@@ -92,15 +92,22 @@ def quantize(x, num_bits=8, min_value=None, max_value=None, inplace=False, symme
 class QuantMeasure(nn.Module):
     """docstring for QuantMeasure."""
 
-    def __init__(self, num_bits=8, momentum=0.1):
+    def __init__(self, update_stat=False, num_bits=8, momentum=0.1):
         super(QuantMeasure, self).__init__()
         self.register_buffer('running_min', torch.zeros(1))
         self.register_buffer('running_max', torch.zeros(1))
         self.momentum = momentum
         self.num_bits = num_bits
+        self.update_stat = update_stat
 
 
     def forward(self, input):
+        if self.update_stat:
+            # self.running_max = max(self.running_max, input.detach().max())
+            # self.running_min = min(self.running_min, input.detach().min())
+            self.running_max = max(self.running_max, input.detach().view(input.size(0), -1).max(-1)[0].mean())
+            self.running_min = min(self.running_min, input.detach().view(input.size(0), -1).min(-1)[0].mean())
+
         if self.training:
             min_value = input.detach().view(input.size(0), -1).min(-1)[0].mean()
             max_value = input.detach().view(input.size(0), -1).max(-1)[0].mean()
@@ -113,57 +120,84 @@ class QuantMeasure(nn.Module):
 
         return quantize(input, self.num_bits, min_value=float(min_value), max_value=float(max_value), num_chunks=16)
 
+    def set_update_stat(self, update_stat):
+        self.update_stat = update_stat
 
 class QConv2d(nn.Conv2d):
     """docstring for QConv2d."""
 
     def __init__(self, in_channels, out_channels, kernel_size,
-                 stride=1, padding=0, dilation=1, groups=1, bias=True, num_bits=8, num_bits_bias=16, momentum=0.1):
+                 stride=1, padding=0, dilation=1, groups=1, bias=True, num_bits=8, num_bits_act=8, num_bits_bias=16, momentum=0.1):
         super(QConv2d, self).__init__(in_channels, out_channels, kernel_size,
                                       stride, padding, dilation, groups, bias)
         self.num_bits = num_bits
         self.num_bits_bias = num_bits_bias
-        self.quant = QuantMeasure(num_bits=num_bits, momentum=momentum)
-        self.scale = None
-        self.scale_prev = None
+        self.quant = QuantMeasure(num_bits=num_bits_act, momentum=momentum)
 
     def set_scale(self, scale=None, scale_prev=None):
         """
         scale_prev should be the same parameter as 'scale' from previous layer 
         """
         if scale is not None:
-            self.scale = nn.Parameter(scale)
+            self.register_parameter("scale", nn.Parameter(scale.view(-1, 1, 1, 1)))
+            
         if scale_prev is not None:
             self.scale_prev = scale_prev
 
     def merge_scale_to_weight(self):
-        if self.scale_prev is not None:
-            step = self.weight.shape[0] // self.groups
-            for g in range(self.groups):
-                self.weight[g*step:(g+1)*step] = self.weight[g*step:(g+1)*step] * self.scale_prev[g*self.weight.shape[1]:(g+1)*self.weight.shape[1]]
+        if hasattr(self, 'scale_prev') and self.scale_prev is not None:
+            weight = self.merge_scale_prev(self.weight.detach(), self.scale_prev)
+            self.weight.data.copy_(weight)
             self.scale_prev = None
 
-        if self.scale is not None:
-            self.weight = self.weight * self.scale.view(-1, 1, 1, 1)
+        if hasattr(self, 'scale') and self.scale is not None:
+            weight, bias = self.merge_scale(self.weight.detach(), self.bias.detach() if self.bias is not None else self.bias, self.scale)
+            self.weight.data.copy_(weight)
+            if self.bias is not None:
+                self.bias.data.copy_(bias)
             self.scale = None
 
+    def merge_scale_prev(self, weight, scale_prev):
+        sweight = weight.clone()
+        step = weight.shape[0] // self.groups
+        step_s = weight.shape[1]
+        
+        scale_prev = scale_prev[:, 0, 0, 0].view(1, -1, 1, 1)
+        for g in range(self.groups):
+            sweight[g*step:(g+1)*step] = weight[g*step:(g+1)*step] / scale_prev[:, g*step_s:(g+1)*step_s]
+
+        return sweight
+
+    def merge_scale(self, weight, bias, scale):
+        weight = weight * scale
+        if bias is not None:
+            bias = bias * scale.view(-1)
+
+        return weight, bias
+
     def forward(self, input):
-        input = self.quant(input)        
-        if self.scale_prev is not None:
+        input = self.quant(input)     
+        sweight = self.weight.clone()
+        sbias = self.bias
+        if hasattr(self, 'scale_prev') and self.scale_prev is not None:
             # multiply by scale
-            step = self.weight.shape[0] // self.groups
-            for g in range(self.groups):
-                self.weight[g*step:(g+1)*step] = self.weight[g*step:(g+1)*step] * self.scale_prev[g*self.weight.shape[1]:(g+1)*self.weight.shape[1]]
+            # scale = torch.clamp(self.scale_prev, max=1)
+            scale = self.scale_prev
+            sweight = self.merge_scale_prev(self.weight, scale)
+        else:
+            sweight = self.weight
 
-        if self.scale is not None:
+        if hasattr(self, 'scale') and self.scale is not None:
+            # scale = torch.clamp(self.scale, max=1)
+            scale = self.scale
             # multiply by scale
-            self.weight = self.weight * self.scale.view(-1, 1, 1, 1)
+            sweight, sbias = self.merge_scale(sweight, sbias, scale)
 
-        qweight = quantize(self.weight, num_bits=self.num_bits,
-                           min_value=float(self.weight.min()),
-                           max_value=float(self.weight.max()))
-        if self.bias is not None:
-            qbias = quantize(self.bias, num_bits=self.num_bits_bias)
+        qweight = quantize(sweight, num_bits=self.num_bits,
+                           min_value=float(sweight.min()),
+                           max_value=float(sweight.max()))
+        if sbias is not None:
+            qbias = quantize(sbias, num_bits=self.num_bits_bias)
         else:
             qbias = None
         
@@ -177,18 +211,17 @@ class QuantConv2d(nn.Conv2d):
     """docstring for QuantConv2d."""
 
     def __init__(self, in_channels, out_channels, kernel_size,
-                 stride=1, padding=0, dilation=1, groups=1, bias=True, num_bits=8, num_bits_weight=None, num_bits_bias=16, momentum=0.1):
+                 stride=1, padding=0, dilation=1, groups=1, bias=True, num_bits=8, num_bits_act=8, num_bits_bias=16, momentum=0.1):
         super(QuantConv2d, self).__init__(in_channels, out_channels, kernel_size,
                                       stride, padding, dilation, groups, bias)
         self.num_bits = num_bits
-        self.num_bits_weight = num_bits_weight or num_bits
         self.num_bits_bias = num_bits_bias
-        self.quant = QuantMeasure(num_bits=num_bits, momentum=momentum)
+        self.quant = QuantMeasure(num_bits=num_bits_act, momentum=momentum)
 
 
     def forward(self, input):
         input = self.quant(input)
-        qweight = quantize(self.weight, num_bits=self.num_bits_weight,
+        qweight = quantize(self.weight, num_bits=self.num_bits,
                            min_value=float(self.weight.min()),
                            max_value=float(self.weight.max()))
         if self.bias is not None:
@@ -205,10 +238,10 @@ class QuantNConv2d(nn.Conv2d):
     """docstring for QuantNConv2d."""
 
     def __init__(self, in_channels, out_channels, kernel_size,
-                 stride=1, padding=0, dilation=1, groups=1, bias=True, num_bits=8, momentum=0.1):
+                 stride=1, padding=0, dilation=1, groups=1, bias=True, num_bits=8, num_bits_act=8, momentum=0.1):
         super(QuantNConv2d, self).__init__(in_channels, out_channels, kernel_size,
                                       stride, padding, dilation, groups, bias)
-        self.quant = QuantMeasure(num_bits=num_bits, momentum=momentum)
+        self.quant = QuantMeasure(num_bits=num_bits_act, momentum=momentum)
 
 
     def forward(self, input):
@@ -222,44 +255,62 @@ class QuantNConv2d(nn.Conv2d):
 class QLinear(nn.Linear):
     """docstring for QConv2d."""
 
-    def __init__(self, in_features, out_features, bias=True, num_bits=8, num_bits_bias=16, momentum=0.1):
+    def __init__(self, in_features, out_features, bias=True, num_bits=8, num_bits_act=8, num_bits_bias=16, momentum=0.1):
         super(QLinear, self).__init__(in_features, out_features, bias)
         self.num_bits = num_bits
         self.num_bits_bias = num_bits_bias
-        self.quant = QuantMeasure(num_bits=num_bits, momentum=momentum)
-        self.scale = None
-        self.scale_prev = None
+        self.quant = QuantMeasure(num_bits=num_bits_act, momentum=momentum)
 
     def set_scale(self, scale=None, scale_prev=None):
         if scale is not None:
-            self.scale = nn.Parameter(scale)
+            self.register_parameter("scale", nn.Parameter(scale.view(-1, 1)))
+
         if scale_prev is not None:
             self.scale_prev = scale_prev
 
     def merge_scale_to_weight(self):
-        if self.scale_prev is not None:
-            self.weight = self.weight * self.scale_prev.view(1, -1)
+        if hasattr(self, 'scale_prev') and self.scale_prev is not None:
+            weight = self.merge_scale_prev(self.weight.detach(), self.scale_prev)
+            self.weight.data.copy_(weight)
             self.scale_prev = None
 
-        if self.scale is not None:
-            self.weight = self.weight * self.scale.view(-1, 1)
+        if hasattr(self, 'scale') and self.scale is not None:
+            weight, bias = self.merge_scale(self.weight.detach(), self.bias.detach() if self.bias is not None else self.bias, self.scale)
+            self.weight.data.copy_(weight)
+            if self.bias is not None:
+                self.bias.data.copy_(bias)
             self.scale = None
+
+    def merge_scale_prev(self, weight, scale_prev):
+        return weight * scale_prev.view(1, -1)
+
+    def merge_scale(self, weight, bias, scale):
+        weight = weight * scale
+        if bias is not None:
+            bias = bias * scale.view(-1)
+        return weight, bias
 
     def forward(self, input):
         input = self.quant(input)
-        if self.scale_prev is not None:
+        sbias = self.bias
+        sweight = self.weight.clone()
+        if hasattr(self, 'scale_prev') and self.scale_prev is not None:
             # multiply by scale
-            self.weight = self.weight * self.scale_prev.view(1, -1)
+            # scale = torch.clamp(self.scale_prev, max=1)
+            scale = self.scale_prev
+            sweight = self.merge_scale_prev(sweight, scale)
 
-        if self.scale is not None:
+        if hasattr(self, 'scale') and self.scale is not None:
             # multiply by scale
-            self.weight = self.weight * self.scale_prev.view(-1, 1)
+            # scale = torch.clamp(self.scale, max=1)
+            scale = self.scale
+            sweight, sbias = self.merge_scale(sweight, sbias, scale)
 
-        qweight = quantize(self.weight, num_bits=self.num_bits,
-                           min_value=float(self.weight.min()),
-                           max_value=float(self.weight.max()))
-        if self.bias is not None:
-            qbias = quantize(self.bias, num_bits=self.num_bits_bias)
+        qweight = quantize(sweight, num_bits=self.num_bits,
+                           min_value=float(sweight.min()),
+                           max_value=float(sweight.max()))
+        if sbias is not None:
+            qbias = quantize(sbias, num_bits=self.num_bits_bias)
         else:
             qbias = None
 
@@ -270,17 +321,16 @@ class QLinear(nn.Linear):
 class QuantLinear(nn.Linear):
     """docstring for QuantLinear."""
 
-    def __init__(self, in_features, out_features, bias=True, num_bits=8, num_bits_weight=None, num_bits_bias=16, momentum=0.1):
+    def __init__(self, in_features, out_features, bias=True, num_bits=8, num_bits_act=8, num_bits_bias=16, momentum=0.1):
         super(QuantLinear, self).__init__(in_features, out_features, bias)
         self.num_bits = num_bits
-        self.num_bits_weight = num_bits_weight or num_bits
         self.num_bits_bias = num_bits_bias
-        self.quant = QuantMeasure(num_bits=num_bits, momentum=momentum)
+        self.quant = QuantMeasure(num_bits=num_bits_act, momentum=momentum)
 
 
     def forward(self, input):
         input = self.quant(input)
-        qweight = quantize(self.weight, num_bits=self.num_bits_weight,
+        qweight = quantize(self.weight, num_bits=self.num_bits,
                            min_value=float(self.weight.min()),
                            max_value=float(self.weight.max()))
         if self.bias is not None:
@@ -295,9 +345,9 @@ class QuantLinear(nn.Linear):
 class QuantNLinear(nn.Linear):
     """docstring for QuantLinear."""
 
-    def __init__(self, in_features, out_features, bias=True, num_bits=8, momentum=0.1):
+    def __init__(self, in_features, out_features, bias=True, num_bits=8, num_bits_act=8, momentum=0.1):
         super(QuantNLinear, self).__init__(in_features, out_features, bias)
-        self.quant = QuantMeasure(num_bits=num_bits, momentum=momentum)
+        self.quant = QuantMeasure(num_bits=num_bits_act, momentum=momentum)
 
 
     def forward(self, input):
@@ -307,14 +357,18 @@ class QuantNLinear(nn.Linear):
 
         return output
 
-class ReLUQuant(nn.Module):
-    def __init__(self, num_bits=8, momentum=0.1):
-        super(ReLUQuant, self).__init__()
-        self.quant = QuantMeasure(num_bits=num_bits, momentum=momentum)
 
-    
-    def forward(self, x):
-        x = torch.clamp(x, min=0)
-        x = self.quant(x)
+def set_layer_bits(graph, bits_weight=8, bits_activation=8, bits_bias=16, targ_type=None):
+    print("Setting num_bits for targ layers...")
+    assert targ_type != None, "targ_type cannot be None"
 
-        return x
+    for idx in graph:
+        if type(graph[idx]) in targ_type:
+            if hasattr(graph[idx], 'quant'):
+                graph[idx].quant = QuantMeasure(bits_activation)
+
+            if hasattr(graph[idx], 'num_bits'):
+                graph[idx].num_bits = bits_weight
+
+            if hasattr(graph[idx], 'num_bits_bias'):
+                graph[idx].num_bits_bias = bits_bias

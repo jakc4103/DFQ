@@ -217,7 +217,7 @@ if __name__ == '__main__':
     if args.quantize:
         if not args.trainable:
             graph = quantize_targ_layer(graph, 8, 16, targ_layer)
-        set_quant_minmax(graph, bottoms, output_shape, is_detection=True)
+        set_quant_minmax(graph, bottoms, is_detection=True)
     
     net = net.to(DEVICE)
 

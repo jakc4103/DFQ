@@ -287,9 +287,9 @@ def quantize_targ_layer(graph, bit_weight=8, bits_bias=16, targ_type=None):
                 tmp = quantize(param, bit_weight, float(param.min()), float(param.max()))
 
                 graph[layer_idx].weight.data.copy_(tmp.data.cpu())
-
-                param = graph[layer_idx].bias.detach()#.cuda()
-                graph[layer_idx].bias.data.copy_(quantize(param, bits_bias, float(param.min()), float(param.max())).data.cpu())
+                if graph[layer_idx].bias is not None:
+                    param = graph[layer_idx].bias.detach()#.cuda()
+                    graph[layer_idx].bias.data.copy_(quantize(param, bits_bias, float(param.min()), float(param.max())).data.cpu())
 
     return graph
 
@@ -339,7 +339,7 @@ def find_prev_bn(bn_module, relu_attached, graph, bottoms, bot):
     return bn_list, relu_attach_list, connect_type_list, targ_without_bn
 
 
-def set_quant_minmax(graph, bottoms, output_shape, is_detection=False, bn_type=torch.nn.BatchNorm2d, N=6, verbose=True):
+def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchNorm2d, N=6, verbose=True):
     """!
     This function set the running_min/running_max value of QuantMeasure using the statistics form previous BatchNorm layer.
     Since I handle the values layer by layer, there will be 3 + 1 cases in computing min/max:

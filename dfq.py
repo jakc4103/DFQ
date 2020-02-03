@@ -119,7 +119,7 @@ def cross_layer_equalization(graph, relations, targ_type, s_range=[1e-8, 1e8], r
     # return graph
 
 def bias_absorption(graph, relations, bottoms, N=3):
-
+    print("Absorbing bias")
     def is_relu_found(layer_second, layer_first, graph, bottoms):
         idx = layer_second
         while idx != layer_first:
@@ -167,7 +167,7 @@ def clip_weight(graph, range_clip=[-15, 15], targ_type=[nn.Conv2d, nn.Linear]):
             graph[idx].weight.data.copy_(graph[idx].weight.data.clamp(range_clip[0], range_clip[1]))
 
 
-def bias_correction(graph, bottoms, targ_type, bn_type=torch.nn.BatchNorm2d):
+def bias_correction(graph, bottoms, targ_type, bits_weight=8, bn_type=torch.nn.BatchNorm2d):
     """
     Perform bias correction.
     Expectation of input activations will be summed for elementwise addition, concate for torch.cat
@@ -208,7 +208,7 @@ def bias_correction(graph, bottoms, targ_type, bn_type=torch.nn.BatchNorm2d):
                     relu_attached[bot[0]] = True
 
             if type(graph[idx_layer]) in targ_type: # 1 to many or 1 to 1
-                bn_list, relu_attach_list, connect_type_list = find_prev_bn(bn_module, relu_attached, graph, bottoms, bot[:])
+                bn_list, relu_attach_list, connect_type_list, _ = find_prev_bn(bn_module, relu_attached, graph, bottoms, bot[:])
 
                 weight = getattr(graph[idx_layer], 'weight').detach().clone()
                 # eps = _quantize_error(weight.cuda(), 8, reduction=None).cpu() ## different results on gpu or cpu, move to gpu
