@@ -179,7 +179,7 @@ def bias_correction(graph, bottoms, targ_type, bits_weight=8, bn_type=torch.nn.B
     standard_normal = lambda x: torch.from_numpy(norm(0, 1).pdf(x)).float()
     standard_cdf = lambda x: torch.from_numpy(norm.cdf(x)).float()
     calculate_mean = lambda weight, bias: weight * standard_normal(-bias/weight) + bias * (1 - standard_cdf(-bias/weight))
-    # calculate_var = lambda weight, bias, mean: -standard_cdf(-bias/weight) * (bias*bias + weight*weight + mean * mean - 2 * mean * bias) +\
+    # calculate_var = lambda weight, bias, mean: (1-standard_cdf(-bias/weight)) * (bias*bias + weight*weight + mean * mean - 2 * mean * bias) +\
     #                             weight * (bias - 2 * mean) * (standard_normal(-bias/weight)) + \
     #                             mean * mean * standard_cdf(-bias/weight)
 

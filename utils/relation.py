@@ -27,7 +27,7 @@ class Relation():
         return self.S
 
 
-def create_relation(graph, bottoms, targ_type=[QConv2d], delete_single=True):
+def create_relation(graph, bottoms, targ_type=[QConv2d], delete_single=False):
     relation_dict = OrderedDict()
 
     def _find_prev(graph, bottoms, layer_idx, targ_type, top_counter): # find previous target layer to form relations

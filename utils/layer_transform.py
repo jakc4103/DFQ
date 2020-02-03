@@ -313,7 +313,10 @@ def find_prev_bn(bn_module, relu_attached, graph, bottoms, bot):
 
         if type(graph[idx_bot]) == str:
             if 'add' in idx_bot:
-                type_tmp[bid] = 'add'
+                if idx_bot in relu_attached:
+                    type_tmp[bid] = 'add_relu'
+                else:
+                    type_tmp[bid] = 'add'
                 cat_add_found = True
             elif 'cat' in idx_bot:
                 type_tmp[bid] = 'cat'
@@ -403,7 +406,7 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
     standard_normal = lambda x: torch.from_numpy(norm(0, 1).pdf(x)).float()
     standard_cdf = lambda x: torch.from_numpy(norm.cdf(x)).float()
     calculate_mean = lambda weight, bias: weight * standard_normal(-bias/weight) + bias * (1 - standard_cdf(-bias/weight))
-    calculate_var = lambda weight, bias, mean: -standard_cdf(-bias/weight) * (bias*bias + weight*weight + mean * mean - 2 * mean * bias) +\
+    calculate_var = lambda weight, bias, mean: (1-standard_cdf(-bias/weight)) * (bias*bias + weight*weight + mean * mean - 2 * mean * bias) +\
                                 weight * (bias - 2 * mean) * (standard_normal(-bias/weight)) + \
                                 mean * mean * standard_cdf(-bias/weight)
     for idx_layer in graph:
@@ -420,8 +423,8 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
             continue
         
         if type(graph[idx_layer]) == torch.nn.ReLU:
-            if bot[0] in bn_module:
-                relu_attached[bot[0]] = True
+            # if bot[0] in bn_module:
+            relu_attached[bot[0]] = True
 
         quant_module = get_quant_module(graph[idx_layer], bot)
         if len(bot) == 1 and bot[0] == 'Data':
@@ -487,7 +490,7 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                     tmp_list.pop(0)
                     bias = layer_cur.fake_bias.detach().clone()
                     weight = layer_cur.fake_weight.detach().clone()
-                    if 'add' == connect_type:
+                    if 'add' in connect_type:
                         if use_relu:
                             mean = calculate_mean(weight, bias)
                             var = calculate_var(weight, bias, mean)
@@ -513,7 +516,7 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                                 node_tmp, use_relu_tmp, connect_type = tmp_list[idx]
                                 bias = node_tmp[0].fake_bias.detach().clone()
                                 weight = node_tmp[0].fake_weight.detach().clone()
-                                if 'add' == connect_type:
+                                if 'add' in connect_type:
                                     if use_relu_tmp:
                                         mean_tmp = calculate_mean(weight, bias)
                                         mean += mean_tmp
@@ -521,6 +524,11 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                                     else:
                                         mean += bias
                                         var += weight * weight
+
+                                    if 'relu' in connect_type:
+                                        mean_tmp = mean
+                                        mean = calculate_mean(torch.sqrt(var), mean)
+                                        var = calculate_var(torch.sqrt(var), mean_tmp, mean)
                                 else:
                                     if 'cat' == connect_type:
                                         value_min = min(value_min, max(0., get_min_value(bias, weight, N)) if use_relu_tmp else get_min_value(bias, weight, N))
@@ -533,18 +541,23 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                             if 'one' == connect_type:
                                 value_min /= (idx_bound + 1)
                                 value_max /= (idx_bound + 1)
-                    if 'add' == connect_type:
+                    if 'add' in connect_type:
                         bn_res[key] = (connect_type, mean, var)
                     else:
                         bn_res[key] = (connect_type, value_min, value_max)
 
                 if len(quant_module) == 1 and len(quant_module) < len(bn_list): # 1 to many
                     assert len(list(bn_res.keys())) == 1, "Error occurs when setting min/max, should be 1 to many"
-                    connect_type, value_min, value_max = list(bn_res.values())[0]
-                    if 'add' == connect_type:
+                    # connect_type, value_min, value_max = list(bn_res.values())[0]
+                    if 'add' in list(bn_res.values())[0][0]:
+                        _, mean, var = list(bn_res.values())[0]
                         value_min = get_min_value(mean, torch.sqrt(var), N)
                         value_max = get_max_value(mean, torch.sqrt(var), N)
-
+                        if 'relu' in list(bn_res.values())[0][0] and value_min < 0:
+                            value_min = 0
+                    else:
+                        _, value_min, value_max = list(bn_res.values())[0]
+                    value_min = 0 if value_min < 0 else value_min
                     # print("type 2, max {}, min {}".format(value_max, value_min))
                     quant_module[0].running_max.fill_(value_max)
                     quant_module[0].running_min.fill_(value_min)
@@ -553,10 +566,12 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                     idx = 0
                     assert len(bn_res) == len(quant_module), 'LENGTH NOT EQUAL {} vs {}'.format(len(bn_res), len(quant_module))
                     while idx < len(bn_res):
-                        if 'add' == bn_res[str(idx)][0]:
+                        if 'add' in bn_res[str(idx)][0]:
                             _, mean, var = bn_res[str(idx)]
                             value_min = get_min_value(mean, torch.sqrt(var), N)
                             value_max = get_max_value(mean, torch.sqrt(var), N)
+                            if 'relu' in bn_res[str(idx)][0] and value_min < 0:
+                                value_min = 0
                         else:
                             _, value_min, value_max = bn_res[str(idx)]
 
