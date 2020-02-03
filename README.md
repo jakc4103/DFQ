@@ -112,7 +112,7 @@ python main_cls.py --quantize --relu --equalize --correction --distill
 
   Also, I think it can be applied to optimizing cross layer equalization and bias correction. The results will be updated as long as I make it to work.  
   For cross layer equalization, it actually performs worse than standard method from DFQ in mobilenetv2 classification task. However, it provide some possibility to optimize structures like branching.  
-  <img src="LE_distill.png" alt="drawing" width="400"/>
+  <img src="images/LE_distill.png" alt="drawing" width="400"/>
 
 ### Fake Quantization
   The 'Int8' model in this repo is actually simulation of 8 bits, the actual calculation is done in floating points.  
