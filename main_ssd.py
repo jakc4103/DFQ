@@ -29,7 +29,7 @@ parser.add_argument("--trained_model", type=str, default='modeling/detection/mb2
 
 parser.add_argument("--dataset_type", default="voc07", type=str,
                     help='Specify dataset type. Currently support voc and open_images.')
-parser.add_argument("--dataset", type=str, default='/media/jakc4103/Dec19/workspace/dataset/VOCdevkit/VOC2007/', help="The root directory of the VOC dataset or Open Images dataset.")
+parser.add_argument("--dataset", type=str, default='/home/jakc4103/WDesktop/dataset/VOCdevkit/VOC2007/', help="The root directory of the VOC dataset or Open Images dataset.")
 parser.add_argument("--label_file", type=str, default='modeling/detection/voc-model-labels.txt', help="The label file path.")
 parser.add_argument("--use_cuda", type=str2bool, default=True)
 parser.add_argument("--use_2007_metric", type=str2bool, default=True)
@@ -137,6 +137,7 @@ def compute_average_precision_per_class(num_true_cases, gt_boxes, difficult_case
 if __name__ == '__main__':
     assert args.relu or args.relu == args.equalize, 'must replace relu6 to relu while equalization'
     assert args.equalize or args.absorption == args.equalize, 'must use absorption with equalize'
+    torch.manual_seed(0)
     eval_path = pathlib.Path(args.eval_dir)
     eval_path.mkdir(exist_ok=True)
     # timer = Timer()
@@ -145,7 +146,7 @@ if __name__ == '__main__':
     if args.dataset_type == "voc07":
         dataset = VOCDataset(args.dataset, is_test=True)
     elif args.dataset_type == "voc12":
-        dataset = VOCDataset('/media/jakc4103/Dec19/workspace/dataset/VOCdevkit/VOC2012/', is_test=False)
+        dataset = VOCDataset('/home/jakc4103/WDesktop/dataset/VOCdevkit/VOC2012/', is_test=False)
     elif args.dataset_type == 'open_images':
         dataset = OpenImagesDataset(args.dataset, dataset_type="test")
 
@@ -215,8 +216,8 @@ if __name__ == '__main__':
 
     if args.quantize:
         if not args.trainable:
-            graph = quantize_targ_layer(graph, targ_layer)
-        set_quant_minmax(graph, bottoms, output_shape, is_detection=True)
+            graph = quantize_targ_layer(graph, 8, 16, targ_layer)
+        set_quant_minmax(graph, bottoms, is_detection=True)
     
     net = net.to(DEVICE)
 
@@ -288,6 +289,6 @@ if __name__ == '__main__':
             args.use_2007_metric
         )
         
-        fff.write("{}: {}\n".format(class_name, ap))
         aps.append(ap)
         print(f"{class_name}: {ap}")
+    print(f"\nAverage Precision Across All Classes:{sum(aps)/len(aps)}")

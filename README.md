@@ -1,5 +1,5 @@
 # DFQ
-PyTorch implementation of [Data Free Quantization Through Weight Equalization and Bias Correction](https://arxiv.org/abs/1906.04721).
+PyTorch implementation of [Data Free Quantization Through Weight Equalization and Bias Correction](https://arxiv.org/abs/1906.04721) with some ideas from [ZeroQ: A Novel Zero Shot Quantization Framework](https://arxiv.org/abs/2001.00281).
 
 ## Results on classification task
 - Tested with [MobileNetV2](https://github.com/tonylins/pytorch-mobilenet-v2)
@@ -13,6 +13,7 @@ model/precision | FP32 | Int8*|
 Original   | 71.81 | 0.09
 +ReLU | 71.78 | 0.15
 +ReLU+LE | 71.78 | 70.32
++ReLU+LE +Distill | -- | 70.41
 +ReLU+BC  |  --  | 56.35
 +ReLU+BC +clip_15  |  --  | 65.76
 +ReLU+LE+BC  |  --  | 70.93
@@ -56,33 +57,34 @@ Original | 74.54 |  62.5
 
 model/precision | FP32 | Int8*|
 -----------|------|------|
-Original   | 70.95 | 65.44
-+ReLU     | 67.44 | 62.59
-+ReLU+LE  | 67.44 | 63.56
-+ReLU+BC  |  --  |  63.26
-+ReLU+BC +clip_15  |  --  | 63.34
-+ReLU+LE+BC  |  --  | 63.65
+Original   | 70.95 | 65.49
++ReLU     | 67.44 | 65.85
++ReLU+LE  | 67.44 | 66.52
++ReLU+BC  |  --  |  66.05
++ReLU+BC +clip_15  |  --  | 66.2
++ReLU+LE+BC  |  --  | 66.5
 
 </td><td>
 
 model/precision | FP32  | Int8*  
 ----------------|-------|-------  
-Original | 60.5 |  56.28
-+ReLU     | 57.61 | 53.12
-+ReLU+LE  | 57.61 | 53.70
-+ReLU+BC  |  --  | 52.69
-+ReLU+BC +clip_15  |  --  | 53.47
-+ReLU+LE+BC  |  --  | 53.72
+Original | 60.5 |  58.4
++ReLU     | 57.61 | 58.09
++ReLU+LE  | 57.61 | 58.74
++ReLU+BC  |  --  | 58.55
++ReLU+BC +clip_15  |  --  | 58.63
++ReLU+LE+BC  |  --  | 58.6
 
 </td></tr> </table>
 
 ## Usage
-There are 5 arguments, all default to False
+There are 6 arguments, all default to False
   1. quantize: whether to quantize parameters and activations.  
   2. relu: whether to replace relu6 to relu.  
   3. equalize: whether to perform cross layer equalization.  
   4. correction: whether to apply bias correction
   5. clip_weight: whether to clip weights in range [-15, 15] (for convolution and linear layer)
+  6. distill: whether to use distill data for setting min/max range of activation quantization
 
 run the equalized model by:
 ```
@@ -94,7 +96,24 @@ run the equalized and bias-corrected model by:
 python main_cls.py --quantize --relu --equalize --correction
 ```
 
+run the equalized and bias-corrected model with distilled data by:
+```
+python main_cls.py --quantize --relu --equalize --correction --distill
+```
+
 ## Note
+### Distilled Data (2020/02/03 updated)
+  According to recent paper [ZeroQ](https://github.com/amirgholami/ZeroQ), we can distill some fake data to match the statistics from batch-normalization layers, then use it to set the min/max value range of activation quantization.  
+  It does not need each conv followed by batch norm layer, and should produce better and **more stable** results using distilled data (the method from DFQ failed on some models due to too large value range).  
+
+  Here are some modifications that differs from original ZeroQ implementation:
+  1. Initialization of distilled data
+  2. Early stop criterion
+
+  Also, I think it can be applied to optimizing cross layer equalization and bias correction. The results will be updated as long as I make it to work.  
+  For cross layer equalization, it actually performs worse than standard method from DFQ in mobilenetv2 classification task. However, it provide some possibility to optimize structures like branching.  
+  <img src="LE_distill.png" alt="drawing" width="400"/>
+
 ### Fake Quantization
   The 'Int8' model in this repo is actually simulation of 8 bits, the actual calculation is done in floating points.  
   This is done by quantizing-dequantizing parameters in each layer and activation between 2 consecutive layers;  
@@ -114,6 +133,9 @@ python main_cls.py --quantize --relu --equalize --correction
 - [x] data-free bias correction
 - [x] test with detection model
 - [x] test with classification model
+- [x] use distilled data to set min/max activation range
+- [ ] use distilled data to find optimal scale matrix
+- [ ] use distilled data to do bias correction
 - [ ] True Int8 inference
 
 ## Acknowledgment
@@ -122,3 +144,4 @@ python main_cls.py --quantize --relu --equalize --correction
 - https://github.com/qfgaohao/pytorch-ssd
 - https://github.com/tonylins/pytorch-mobilenet-v2
 - https://github.com/xxradon/PytorchToCaffe
+- https://github.com/amirgholami/ZeroQ

@@ -146,8 +146,8 @@ def main():
 
     if args.quantize:
         if not args.trainable:
-            graph = quantize_targ_layer(graph, targ_layer)
-        set_quant_minmax(graph, bottoms, output_shape)
+            graph = quantize_targ_layer(graph, 8, 16, targ_layer)
+        set_quant_minmax(graph, bottoms)
     
     model = model.cuda()
     model.eval()
