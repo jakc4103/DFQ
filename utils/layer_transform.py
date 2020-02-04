@@ -261,7 +261,7 @@ def merge_batchnorm(model, graph, bottoms, targ_type=[QConv2d]):
 						 (bn_weight.view(-1) * bn_mean.view(-1)) / torch.sqrt(bn_var.view(-1) + bn_eps)))
 
                     # store values for later usage. ex: set_quant_min_max and bias correction
-                    graph[layer_idx].register_buffer('fake_weight', bn_weight.clone())
+                    graph[layer_idx].register_buffer('fake_weight', torch.abs(bn_weight.clone()))
                     graph[layer_idx].register_buffer('fake_bias', bn_bias.clone())
 
                     # set batch norm layer to the same to an identity layer
@@ -314,7 +314,7 @@ def find_prev_bn(bn_module, relu_attached, graph, bottoms, bot):
         if type(graph[idx_bot]) == str:
             if 'add' in idx_bot:
                 if idx_bot in relu_attached:
-                    type_tmp[bid] = 'add_relu'
+                    type_tmp[bid] = 'add_{}'.format(relu_attached[idx_bot])
                 else:
                     type_tmp[bid] = 'add'
                 cat_add_found = True
@@ -323,7 +323,7 @@ def find_prev_bn(bn_module, relu_attached, graph, bottoms, bot):
                 cat_add_found = True
 
         elif not cat_add_found and type(graph[idx_bot]) in [nn.Conv2d, QConv2d, QuantConv2d, QuantNConv2d, nn.Linear, QLinear, QuantLinear, QuantNLinear]:
-            print("Warning: {} layer before batch norm layer detected".format(type(graph[idx_bot])))
+            print("Warning: {} layer before first batch norm layer detected. The calculated value range might be off.".format(type(graph[idx_bot])))
             if bid[0] in targ_without_bn:
                 assert False, "Multiple conv/linear layer without batch_norm is not supported."
             if type(graph[idx_bot]) in [nn.Conv2d, QConv2d, QuantConv2d, QuantNConv2d]:
@@ -401,6 +401,7 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
     bn_module = {}
     relu_attached = {}
     bn_out_shape = {}
+    eps = 1e-6
     get_max_value = lambda bias, weight, n: float(torch.max(bias + n * weight))
     get_min_value = lambda bias, weight, n: float(torch.min(bias - n * weight))
     standard_normal = lambda x: torch.from_numpy(norm(0, 1).pdf(x)).float()
@@ -409,6 +410,14 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
     calculate_var = lambda weight, bias, mean: (1-standard_cdf(-bias/weight)) * (bias*bias + weight*weight + mean * mean - 2 * mean * bias) +\
                                 weight * (bias - 2 * mean) * (standard_normal(-bias/weight)) + \
                                 mean * mean * standard_cdf(-bias/weight)
+    calculate_mean_6 = lambda weight, bias: weight * (standard_normal(-bias/weight) - standard_normal((6-bias)/weight)) +\
+                                            bias * (standard_cdf((6-bias)/weight) - standard_cdf(-bias/weight)) +\
+                                            6 * (1 - standard_cdf((6-bias)/weight))
+    calculate_var_6 = lambda weight, bias, mean: (standard_cdf((6-bias)/weight)-standard_cdf(-bias/weight)) * (bias*bias + weight*weight + mean * mean - 2 * mean * bias) +\
+                                                weight * (-6) * standard_normal((6-bias)/weight) +\
+                                                weight * (bias - 2 * mean) * (standard_normal(-bias/weight) - standard_normal((6-bias)/weight)) +\
+                                                mean * mean * standard_cdf(-bias/weight) +\
+                                                ((6 - mean) ** 2) * (1 - standard_cdf((6-bias)/weight))
     for idx_layer in graph:
         # print("process: {}, {}".format(idx_layer, type(graph[idx_layer])))
         bot = bottoms[idx_layer]
@@ -419,12 +428,14 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
         if type(graph[idx_layer]) == bn_type:
             bn_module[idx_layer] = graph[idx_layer]
             bn_out_shape[idx_layer] = graph[idx_layer]
-            relu_attached[idx_layer] = False
+            relu_attached[idx_layer] = 'none'
             continue
         
         if type(graph[idx_layer]) == torch.nn.ReLU:
             # if bot[0] in bn_module:
-            relu_attached[bot[0]] = True
+            relu_attached[bot[0]] = 'relu'
+        elif type(graph[idx_layer]) == torch.nn.ReLU6:
+            relu_attached[bot[0]] = 'relu6'
 
         quant_module = get_quant_module(graph[idx_layer], bot)
         if len(bot) == 1 and bot[0] == 'Data':
@@ -441,7 +452,7 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                 idx = 0
                 while idx < len(bn_list):
                     bias = getattr(bn_list[idx][0], 'fake_bias').view(-1)
-                    weight = torch.abs(getattr(bn_list[idx][0], 'fake_weight').view(-1))
+                    weight = getattr(bn_list[idx][0], 'fake_weight').view(-1)
                     
                     if bn_list[idx][1][0] in targ_without_bn:
                         # case (d.)
@@ -465,8 +476,8 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                         value_min = fake_out.min()
 
                     else:
-                        value_max = get_max_value(bias, weight, N)
-                        value_min = get_min_value(bias, weight, N) if not relu_attach_list[idx] else 0.
+                        value_min = max(0., get_min_value(bias, weight, N)) if 'relu' in relu_attach_list[idx] else get_min_value(bias, weight, N)
+                        value_max = min(6., get_max_value(bias, weight, N)) if 'relu6' in relu_attach_list[idx] else get_max_value(bias, weight, N)
                     # print("type 1, max {}, min {}".format(value_max, value_min))
                     quant_module[idx].running_max.fill_(value_max)
                     quant_module[idx].running_min.fill_(value_min)
@@ -491,15 +502,18 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                     bias = layer_cur.fake_bias.detach().clone()
                     weight = layer_cur.fake_weight.detach().clone()
                     if 'add' in connect_type:
-                        if use_relu:
+                        if 'relu' == use_relu:
                             mean = calculate_mean(weight, bias)
                             var = calculate_var(weight, bias, mean)
+                        elif 'relu6' == use_relu:
+                            mean = calculate_mean_6(weight, bias)
+                            var = calculate_var_6(weight, bias, mean)
                         else:
                             mean = bias
                             var = weight * weight
                     else:
-                        value_min = max(0., get_min_value(bias, weight, N)) if use_relu else get_min_value(bias, weight, N)
-                        value_max = get_max_value(bias, weight, N)
+                        value_min = max(0., get_min_value(bias, weight, N)) if 'relu' in use_relu else get_min_value(bias, weight, N)
+                        value_max = min(6., get_max_value(bias, weight, N)) if 'relu6' in use_relu else get_max_value(bias, weight, N)
 
                     while len(tmp_list) > 0:
                         idx_bound = 0
@@ -517,22 +531,30 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                                 bias = node_tmp[0].fake_bias.detach().clone()
                                 weight = node_tmp[0].fake_weight.detach().clone()
                                 if 'add' in connect_type:
-                                    if use_relu_tmp:
+                                    if 'relu' == use_relu_tmp:
                                         mean_tmp = calculate_mean(weight, bias)
                                         mean += mean_tmp
                                         var += calculate_var(weight, bias, mean_tmp)
+                                    elif 'relu6' == use_relu_tmp:
+                                        mean_tmp = calculate_mean_6(weight, bias)
+                                        mean += mean_tmp
+                                        var += calculate_var_6(weight, bias, mean_tmp)
                                     else:
                                         mean += bias
                                         var += weight * weight
 
-                                    if 'relu' in connect_type:
+                                    if 'relu6' in connect_type:
                                         mean_tmp = mean
-                                        mean = calculate_mean(torch.sqrt(var), mean)
-                                        var = calculate_var(torch.sqrt(var), mean_tmp, mean)
+                                        mean = calculate_mean_6(torch.sqrt(var + eps), mean)
+                                        var = calculate_var_6(torch.sqrt(var + eps), mean_tmp, mean)
+                                    elif 'relu' in connect_type:
+                                        mean_tmp = mean
+                                        mean = calculate_mean(torch.sqrt(var + eps), mean)
+                                        var = calculate_var(torch.sqrt(var + eps), mean_tmp, mean)
                                 else:
                                     if 'cat' == connect_type:
-                                        value_min = min(value_min, max(0., get_min_value(bias, weight, N)) if use_relu_tmp else get_min_value(bias, weight, N))
-                                        value_max = max(value_max, get_max_value(bias, weight, N))
+                                        value_min = min(value_min, max(0., get_min_value(bias, weight, N)) if 'relu' in use_relu_tmp else get_min_value(bias, weight, N))
+                                        value_max = max(value_max, min(6., get_max_value(bias, weight, N)) if 'relu6' in use_relu_tmp else get_max_value(bias, weight, N))
                                     else:
                                         value_min += max(0., get_min_value(bias, weight, N)) if use_relu_tmp else get_min_value(bias, weight, N)
                                         value_max += get_max_value(bias, weight, N)
@@ -551,13 +573,16 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                     # connect_type, value_min, value_max = list(bn_res.values())[0]
                     if 'add' in list(bn_res.values())[0][0]:
                         _, mean, var = list(bn_res.values())[0]
-                        value_min = get_min_value(mean, torch.sqrt(var), N)
-                        value_max = get_max_value(mean, torch.sqrt(var), N)
-                        if 'relu' in list(bn_res.values())[0][0] and value_min < 0:
-                            value_min = 0
+                        value_min = get_min_value(mean, torch.sqrt(var + eps), N)
+                        value_max = get_max_value(mean, torch.sqrt(var + eps), N)
+                        # dont needed
+                        # if 'relu' in list(bn_res.values())[0][0] and value_min < 0:
+                        #     value_min = 0
+                        # if 'relu6' in list(bn_res.values())[0][0] and value_max > 6:
+                        #     value_max = 6
                     else:
                         _, value_min, value_max = list(bn_res.values())[0]
-                    value_min = 0 if value_min < 0 else value_min
+
                     # print("type 2, max {}, min {}".format(value_max, value_min))
                     quant_module[0].running_max.fill_(value_max)
                     quant_module[0].running_min.fill_(value_min)
@@ -568,10 +593,12 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                     while idx < len(bn_res):
                         if 'add' in bn_res[str(idx)][0]:
                             _, mean, var = bn_res[str(idx)]
-                            value_min = get_min_value(mean, torch.sqrt(var), N)
-                            value_max = get_max_value(mean, torch.sqrt(var), N)
-                            if 'relu' in bn_res[str(idx)][0] and value_min < 0:
-                                value_min = 0
+                            value_min = get_min_value(mean, torch.sqrt(var + eps), N)
+                            value_max = get_max_value(mean, torch.sqrt(var + eps), N)
+                            # if 'relu' in bn_res[str(idx)][0] and value_min < 0:
+                            #     value_min = 0
+                            # if 'relu6' in bn_res[str(idx)][0] and value_max > 6:
+                            #     value_max = 6
                         else:
                             _, value_min, value_max = bn_res[str(idx)]
 
