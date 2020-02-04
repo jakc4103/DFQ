@@ -90,13 +90,14 @@ class ModuleHook(object):
         self.module = None
 
     def hook(self, module, input, output):
-        if self.module is None:
-            self.module = module
-        self.input = input
+        # if self.module is None:
+        self.module = module
+        self.inputs = input
         self.outputs = output
 
     def clear(self):
-        self.input = None
+        self.module = None
+        self.inputs = None
         self.outputs = None
 
 def set_scale(res, graph, bottoms, targ_layer):
@@ -276,12 +277,23 @@ def update_scale(qmodel, model, data_distill, graph, bottoms, res, targ_layer, n
 
     return qmodel
 
-def update_quant_range(model, data):
+def update_quant_range(model, data, graph, bottoms, is_detection=False):
     with torch.no_grad():
+        replace_op()
         for batch_data in data:
             batch_data = batch_data.cuda()
             _ = model(batch_data)
-
+        restore_op()
+        for idx in graph:
+            if bottoms[idx] is None:
+                continue
+            if bottoms[idx][0] == "Data":
+                if not is_detection:
+                    graph[idx].quant.running_max.fill_(2.64)
+                    graph[idx].quant.running_min.fill_(-2.11790393)
+                else:
+                    graph[idx].quant.running_max.fill_(1)
+                    graph[idx].quant.running_min.fill_(-1)
     return model
 
 def set_update_stat(model, targ_type, update_stat):
@@ -319,9 +331,15 @@ def bias_correction_distill(qmodel, model_original, data, targ_type, targ_type_o
             hook_handles.append(module.register_forward_hook(hook.hook))
 
     error_list = {}
-
+    assert len(hooks) == len(hooks_original), "len of hooks in 2 models must be the same"
     with torch.no_grad():
         for b, batch_data in enumerate(data):
+
+            for hook in hooks:
+                hook.clear()
+                
+            for hook in hooks_original:
+                hook.clear()
             batch_data = batch_data.cuda()
             replace_op()
             out = qmodel(batch_data)
@@ -329,20 +347,25 @@ def bias_correction_distill(qmodel, model_original, data, targ_type, targ_type_o
 
             out = model_original(batch_data)
             for idx in range(len(hooks)):
+                # print("Hook {}, error mean: {}, error sum: {}".format(idx, (hooks_original[idx].outputs.mean(0) - hooks[idx].outputs.mean(0)).cpu().mean(), (hooks_original[idx].outputs.mean(0) - hooks[idx].outputs.mean(0)).cpu().sum()))
                 if b == 0:
-                    error_list[idx] = (hooks_original[idx].outputs - hooks[idx].outputs).cpu()
+                    error_list[idx] = [hooks[idx].outputs.mean(0).cpu(), hooks_original[idx].outputs.mean(0).cpu()]
                 else:
-                    error_list[idx] = (error_list[idx] * idx + (hooks_original[idx].outputs - hooks[idx].outputs).cpu()) / (idx + 1)
+                    error_list[idx][0] += (hooks[idx].outputs.mean(0)).cpu()
+                    error_list[idx][1] += (hooks_original[idx].outputs.mean(0)).cpu()
 
                 # error_list[idx].append((hooks[idx].outputs - hooks_original[idx].outputs).cpu())
 
         for idx, hook in enumerate(hooks):
             module = hook.module
-            error = error_list[idx]
+            error = (error_list[idx][0] - error_list[idx][1]) / len(data)
+            # print("Hook: {}, error_sum: {}, error_mean: {}".format(idx, error.sum(), error.mean()))
             # for idx_error in range(1, len(error_list[idx])):
                 # error += error_list[idx][idx_error]
-            error = error.view(error.size(0), error.size(1), -1).sum(-1).mean(0)
-            module.bias.add_(error.cuda())
+            error = error.view(error.size(0), -1).sum(-1)
+            if not hasattr(module, "bias") or getattr(module, "bias") is None:
+                module.bias = torch.nn.Parameter(torch.zeros(error.size(0)), requires_grad=False)
+            module.bias.add_(-error.cuda())
 
     for handle in hook_handles:
         handle.remove()

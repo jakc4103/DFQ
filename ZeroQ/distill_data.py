@@ -58,12 +58,26 @@ class output_hook(object):
     def clear(self):
         self.outputs = None
 
+class InputHook(object):
+    """
+	Forward_hook used to get the input of the intermediate layer. 
+	"""
+    def __init__(self):
+        super(InputHook, self).__init__()
+        self.inputs = None
+
+    def hook(self, module, input, output):
+        self.inputs = input
+
+    def clear(self):
+        self.inputs = None
+
 def getDistilData(teacher_model,
                   dataset,
                   batch_size,
                   num_batch=1,
                   bn_merged=False,
-                  for_inception=False, gpu=True):
+                  for_inception=False, gpu=True, value_range=[-10, 10], size=[224, 224], max_value=3., early_break_factor=1.):
     """
 	Generate distilled data according to the BatchNorm statistics in the pretrained single-precision model.
 	Currently only support a single GPU.
@@ -78,7 +92,7 @@ def getDistilData(teacher_model,
     # initialize distilled data with random noise according to the dataset
     dataloader = getRandomData(dataset=dataset,
                                batch_size=batch_size,
-                               for_inception=for_inception)
+                               for_inception=for_inception, max_value=max_value)
 
     eps = 1e-6
     # initialize hooks and single-precision model
@@ -96,9 +110,10 @@ def getDistilData(teacher_model,
     ])
 
     for n, m in teacher_model.named_modules():
-        if isinstance(m, nn.Conv2d) and len(hook_handles) < layers:
-            # register hooks on the convolutional layers to get the intermediate output after convolution and before BatchNorm.
-            hook = output_hook()
+        if isinstance(m, nn.BatchNorm2d):
+            # register hooks on the convolutional layers to get the intermediate input to BatchNorm.
+            # hook = output_hook()
+            hook = InputHook()
             hooks.append(hook)
             hook_handles.append(m.register_forward_hook(hook.hook))
             # register hooks to weight
@@ -159,34 +174,35 @@ def getDistilData(teacher_model,
             optimizer.zero_grad()
             for hook in hooks:
                 hook.clear()
-            output = teacher_model(gaussian_data)
+            output = teacher_model(gaussian_data.clamp(value_range[0], value_range[1]))
             # entropy_loss = crit(output)
             mean_loss = 0
             std_loss = 0
 
             # compute the loss according to the BatchNorm statistics and the statistics of intermediate output
             for cnt, (bn_stat, hook) in enumerate(zip(bn_stats, hooks)):
-                tmp_output = hook.outputs
+                tmp_output = hook.inputs[0]
                 bn_mean, bn_std = bn_stat[0], bn_stat[1]
                 tmp_mean = torch.mean(tmp_output.view(tmp_output.size(0),
                                                       tmp_output.size(1), -1),
                                       dim=2)
-                tmp_std = torch.sqrt(
-                    torch.var(tmp_output.view(tmp_output.size(0),
-                                              tmp_output.size(1), -1),
-                              dim=2) + eps)
+                if tmp_output.view(tmp_output.size(0), tmp_output.size(1), -1).size(-1) != 1: # to prevent unbiased estimation results to NaN
+                    tmp_std = torch.std(tmp_output.view(tmp_output.size(0), tmp_output.size(1), -1) + eps, dim=2) 
+                else:
+                    tmp_std = torch.std(tmp_output.view(tmp_output.size(1), -1) + eps, dim=1) 
+
                 mean_loss += own_loss(bn_mean, tmp_mean)
                 std_loss += own_loss(bn_std, tmp_std)
             tmp_mean = torch.mean(gaussian_data.view(gaussian_data.size(0), 3,
                                                      -1),
                                   dim=2)
-            tmp_std = torch.sqrt(
-                torch.var(gaussian_data.view(gaussian_data.size(0), 3, -1),
-                          dim=2) + eps)
+            tmp_std = torch.std(gaussian_data.view(gaussian_data.size(0), 3, -1),
+                          dim=2) 
+
             mean_loss += own_loss(tmp_mean, input_mean)
             std_loss += own_loss(tmp_std, input_std)
             total_loss = mean_loss + std_loss# + entropy_loss
-            # print("mean: {}, std: {}, entropy: {}, it: {}, num: {}, total_layers: {}".format(mean_loss, std_loss, entropy_loss, it, i, layers+1))
+            # print("mean: {}, std: {}, it: {}, num: {}, total_layers: {}".format(mean_loss, std_loss, it, i, layers+1))
 
             # update the distilled data
             total_loss.backward()
@@ -195,11 +211,12 @@ def getDistilData(teacher_model,
             scheduler.step(total_loss.item())
 
             # early stop to prevent overfitting
-            if total_loss <= (layers + 1) * 3:# and entropy_loss < 0.5:
-                # print("Early break with loss: {}, entropy: {}, (layer+1)*3: {}".format(total_loss, entropy_loss, (layers+1)*3))
+            if total_loss <= (layers + 1) * early_break_factor:# and entropy_loss < 0.5:
+                # print("Early break with loss: {}, (layer+1)*3: {}".format(total_loss, (layers+1)*3))
                 break
 
-        refined_gaussian.append(gaussian_data.detach().clone())
+        refined_gaussian.append(gaussian_data.detach().clone().clamp(value_range[0], value_range[1]))
+        gaussian_data.cpu()
 
     for handle in hook_handles:
         handle.remove()

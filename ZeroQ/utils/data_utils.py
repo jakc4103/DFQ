@@ -27,11 +27,11 @@ class UniformDataset(Dataset):
     """
     get random uniform samples with mean 0 and variance 1
     """
-    def __init__(self, length, size, transform, value_range):
+    def __init__(self, length, size, transform, max_value):
         self.length = length
         self.transform = transform
         self.size = size
-        self.range = value_range
+        self.max_value = max_value
 
     def __len__(self):
         return self.length
@@ -40,11 +40,11 @@ class UniformDataset(Dataset):
         # var[U(-128, 127)] = (127 - (-128))**2 / 12 = 5418.75
         # sample = (torch.randint(high=255, size=self.size).float() -
         #           127.5) / 5418.75
-        sample = ((torch.randint(high=255, size=self.size).float() - 127.) / 128.) * self.range
+        sample = ((torch.randint(high=255, size=self.size).float() - 127.) / 128.) * self.max_value
         return sample
 
 
-def getRandomData(dataset='cifar10', batch_size=512, for_inception=False, value_range=3.0):
+def getRandomData(dataset='cifar10', batch_size=512, for_inception=False, max_value=3.0, size=[224, 224]):
     """
     get random sample dataloader 
     dataset: name of the dataset 
@@ -56,13 +56,14 @@ def getRandomData(dataset='cifar10', batch_size=512, for_inception=False, value_
         num_data = 10000
     elif dataset == 'imagenet':
         num_data = 10000
-        if not for_inception:
-            size = (3, 224, 224)
-        else:
-            size = (3, 299, 299)
+        # if not for_inception:
+        #     size = (3, 224, 224)
+        # else:
+        #     size = (3, 299, 299)
+        size = (3, size[0], size[1])
     else:
         raise NotImplementedError
-    dataset = UniformDataset(length=10000, size=size, transform=None, value_range=value_range)
+    dataset = UniformDataset(length=10000, size=size, transform=None, max_value=max_value)
     data_loader = DataLoader(dataset,
                              batch_size=batch_size,
                              shuffle=False,
