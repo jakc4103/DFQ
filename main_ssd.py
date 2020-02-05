@@ -43,7 +43,7 @@ parser.add_argument("--quantize", action='store_true')
 parser.add_argument("--equalize", action='store_true')
 parser.add_argument("--correction", action='store_true')
 parser.add_argument("--absorption", action='store_true')
-parser.add_argument("--distill", action='store_true')
+parser.add_argument("--distill_range", action='store_true')
 parser.add_argument("--log", action='store_true')
 parser.add_argument("--relu", action='store_true')
 parser.add_argument("--clip_weight", action='store_true')
@@ -178,7 +178,7 @@ if __name__ == '__main__':
 
     data = torch.ones((4, 3, 300, 300))
 
-    if args.distill:
+    if args.distill_range:
         import copy
         # define FP32 model 
         model_original = create_mobilenetv2_ssd_lite(len(class_names), width_mult=args.mb2_width_mult, is_test=True, quantize=args.quantize)
@@ -196,7 +196,7 @@ if __name__ == '__main__':
     transformer = TorchTransformer()
     module_dict = {}
     if args.quantize:
-        if args.distill:
+        if args.distill_range:
             module_dict[1] = [(torch.nn.Conv2d, QConv2d), (torch.nn.Linear, QLinear)]
         elif args.trainable:
             module_dict[1] = [(torch.nn.Conv2d, QuantConv2d), (torch.nn.Linear, QuantLinear)]
@@ -215,7 +215,7 @@ if __name__ == '__main__':
     bottoms = transformer.log.getBottoms()
     output_shape = transformer.log.getOutShapes()
     if args.quantize:
-        if args.distill:
+        if args.distill_range:
             targ_layer = [QConv2d, QLinear]
         elif args.trainable:
             targ_layer = [QuantConv2d, QuantLinear]
@@ -230,8 +230,8 @@ if __name__ == '__main__':
     net = merge_batchnorm(net, graph, bottoms, targ_layer)
 
     #create relations
-    if args.equalize or args.distill:
-        res = create_relation(graph, bottoms, targ_layer, delete_single=not args.distill)
+    if args.equalize or args.distill_range:
+        res = create_relation(graph, bottoms, targ_layer, delete_single=not args.distill_range)
         if args.equalize:
             cross_layer_equalization(graph, res, targ_layer, visualize_state=False, converge_thres=2e-7, s_range=(1/args.equal_range, args.equal_range))
 
@@ -248,10 +248,10 @@ if __name__ == '__main__':
         bias_correction(graph, bottoms, targ_layer)
 
     if args.quantize:
-        if not args.trainable and not args.distill:
-            graph = quantize_targ_layer(graph, 8, 16, targ_layer)
+        if not args.trainable and not args.distill_range:
+            graph = quantize_targ_layer(graph, args.bits_weight, args.bits_bias, targ_layer)
 
-        if args.distill:
+        if args.distill_range:
             set_update_stat(net, [QuantMeasure], True)
             net = update_quant_range(net.cuda(), data_distill, graph, bottoms, is_detection=True)
             set_update_stat(net, [QuantMeasure], False)
@@ -335,7 +335,7 @@ if __name__ == '__main__':
     print(f"\nAverage Precision Across All Classes:{sum(aps)/len(aps)}")
     if args.log:
         with open("ssd_result.txt", 'a+') as ww:
-            ww.write("{}, quant: {}, relu: {}, equalize: {}, absorption: {}, correction: {}, clip: {}, distill: {}\n".format(
-                args.dataset_type, args.quantize, args.relu, args.equalize, args.absorption, args.correction, args.clip_weight, args.distill
+            ww.write("{}, quant: {}, relu: {}, equalize: {}, absorption: {}, correction: {}, clip: {}, distill_range: {}\n".format(
+                args.dataset_type, args.quantize, args.relu, args.equalize, args.absorption, args.correction, args.clip_weight, args.distill_range
             ))
             ww.write("mAP: {}\n\n".format(sum(aps)/len(aps)))

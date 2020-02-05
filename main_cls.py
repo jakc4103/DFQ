@@ -24,7 +24,7 @@ def get_argument():
     parser = argparse.ArgumentParser()
     parser.add_argument("--quantize", action='store_true')
     parser.add_argument("--equalize", action='store_true')
-    parser.add_argument("--distill", action='store_true')
+    parser.add_argument("--distill_range", action='store_true')
     parser.add_argument("--correction", action='store_true')
     parser.add_argument("--absorption", action='store_true')
     parser.add_argument("--relu", action='store_true')
@@ -83,7 +83,7 @@ def main():
         model = mobilenet_v2('modeling/classification/mobilenetv2_1.0-f2a8633.pth.tar')
     model.eval()
     
-    if args.distill:
+    if args.distill_range:
         import copy
         # define FP32 model 
         model_original = copy.deepcopy(model)
@@ -116,7 +116,7 @@ def main():
     transformer = TorchTransformer()
     module_dict = {}
     if args.quantize:
-        if args.distill:
+        if args.distill_range:
             module_dict[1] = [(nn.Conv2d, QConv2d), (nn.Linear, QLinear)]
         elif args.trainable:
             module_dict[1] = [(nn.Conv2d, QuantConv2d), (nn.Linear, QuantLinear)]
@@ -134,7 +134,7 @@ def main():
     graph = transformer.log.getGraph()
     bottoms = transformer.log.getBottoms()
     if args.quantize:
-        if args.distill:
+        if args.distill_range:
             targ_layer = [QConv2d, QLinear]
         elif args.trainable:
             targ_layer = [QuantConv2d, QuantLinear]
@@ -149,7 +149,7 @@ def main():
     model = merge_batchnorm(model, graph, bottoms, targ_layer)
 
     #create relations
-    if args.equalize or args.distill:
+    if args.equalize or args.distill_range:
         res = create_relation(graph, bottoms, targ_layer, delete_single=False)
         if args.equalize:
             cross_layer_equalization(graph, res, targ_layer, visualize_state=False, converge_thres=2e-7)
@@ -177,10 +177,10 @@ def main():
         bias_correction(graph, bottoms, targ_layer, bits_weight=args.bits_weight)
 
     if args.quantize:
-        if not args.trainable and not args.distill:
+        if not args.trainable and not args.distill_range:
             graph = quantize_targ_layer(graph, args.bits_weight, args.bits_bias, targ_layer)
 
-        if args.distill:
+        if args.distill_range:
             set_update_stat(model, [QuantMeasure], True)
             model = update_quant_range(model.cuda(), data_distill, graph, bottoms)
             set_update_stat(model, [QuantMeasure], False)
@@ -204,8 +204,8 @@ def main():
         restore_op()
     if args.log:
         with open("cls_result.txt", 'a+') as ww:
-            ww.write("resnet: {}, quant: {}, relu: {}, equalize: {}, absorption: {}, correction: {}, clip: {}, distill: {}\n".format(
-                args.resnet, args.quantize, args.relu, args.equalize, args.absorption, args.correction, args.clip_weight, args.distill
+            ww.write("resnet: {}, quant: {}, relu: {}, equalize: {}, absorption: {}, correction: {}, clip: {}, distill_range: {}\n".format(
+                args.resnet, args.quantize, args.relu, args.equalize, args.absorption, args.correction, args.clip_weight, args.distill_range
             ))
             ww.write("Acc: {}\n\n".format(acc))
 

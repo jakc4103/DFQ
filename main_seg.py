@@ -26,7 +26,7 @@ def get_argument():
     parser.add_argument("--equalize", action='store_true')
     parser.add_argument("--correction", action='store_true')
     parser.add_argument("--absorption", action='store_true')
-    parser.add_argument("--distill", action='store_true')
+    parser.add_argument("--distill_range", action='store_true')
     parser.add_argument("--log", action='store_true')
     parser.add_argument("--relu", action='store_true')
     parser.add_argument("--clip_weight", action='store_true')
@@ -107,7 +107,7 @@ def main():
     state_dict = torch.load('modeling/segmentation/deeplab-mobilenet.pth.tar')['state_dict']
     model.load_state_dict(state_dict)
     model.eval()
-    if args.distill:
+    if args.distill_range:
         import copy
         # define FP32 model 
         model_original = copy.deepcopy(model)
@@ -124,7 +124,7 @@ def main():
 
     module_dict = {}
     if args.quantize:
-        if args.distill:
+        if args.distill_range:
             module_dict[1] = [(nn.Conv2d, QConv2d)]
         elif args.trainable:
             module_dict[1] = [(nn.Conv2d, QuantConv2d)]
@@ -142,7 +142,7 @@ def main():
     bottoms = transformer.log.getBottoms()
 
     if args.quantize:
-        if args.distill:
+        if args.distill_range:
             targ_layer = [QConv2d]
         elif args.trainable:
             targ_layer = [QuantConv2d]
@@ -155,7 +155,7 @@ def main():
     model = merge_batchnorm(model, graph, bottoms, targ_layer)
 
     #create relations
-    if args.equalize or args.distill:
+    if args.equalize or args.distill_range:
         res = create_relation(graph, bottoms, targ_layer)
         if args.equalize:
             cross_layer_equalization(graph, res, targ_layer, visualize_state=False)
@@ -173,10 +173,10 @@ def main():
         bias_correction(graph, bottoms, targ_layer)
 
     if args.quantize:
-        if not args.trainable and not args.distill:
-            graph = quantize_targ_layer(graph, 8, 16, targ_layer)
+        if not args.trainable and not args.distill_range:
+            graph = quantize_targ_layer(graph, args.bits_weight, args.bits_bias, targ_layer)
         
-        if args.distill:
+        if args.distill_range:
             set_update_stat(model, [QuantMeasure], True)
             model = update_quant_range(model.cuda(), data_distill, graph, bottoms)
             set_update_stat(model, [QuantMeasure], False)
