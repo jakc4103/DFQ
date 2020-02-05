@@ -158,7 +158,7 @@ def getDistilData(teacher_model,
         # crit = EntropyLoss().cuda()
         optimizer = optim.Adam([gaussian_data], lr=0.1)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
-                                                         min_lr=1e-4,
+                                                         min_lr=1e-7,
                                                          verbose=False,
                                                          patience=100)
 
@@ -214,6 +214,8 @@ def getDistilData(teacher_model,
             if total_loss <= (layers + 1) * early_break_factor:# and entropy_loss < 0.5:
                 # print("Early break with loss: {}, (layer+1)*3: {}".format(total_loss, (layers+1)*3))
                 break
+
+        print("{} out of {} distilled.".format(i+1, num_batch))
 
         refined_gaussian.append(gaussian_data.detach().clone().clamp(value_range[0], value_range[1]))
         gaussian_data.cpu()
