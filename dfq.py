@@ -148,8 +148,8 @@ def bias_absorption(graph, relations, bottoms, N=3):
         c = (bn_bias - N * bn_weight)
         c.clamp_(0)
 
-        S = rr.get_scale_vec()
-        c[S<=1] = 0
+        # S = rr.get_scale_vec()
+        # c[S<=1] = 0
 
         weight = weight.view(size[0], size[1], -1)
         wc = torch.zeros(weight.size(0))
