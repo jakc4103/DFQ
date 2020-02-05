@@ -6,7 +6,7 @@ import cv2
 from utils.metrics import Evaluator
 
 
-def forward_all(net_inference, dataloader, visualize=False):
+def forward_all(net_inference, dataloader, visualize=False, opt=None):
     evaluator = Evaluator(21)
     evaluator.reset()
     with torch.no_grad():
@@ -48,6 +48,12 @@ def forward_all(net_inference, dataloader, visualize=False):
     print("Acc_class: {}".format(Acc_class))
     print("mIoU: {}".format(mIoU))
     print("FWIoU: {}".format(FWIoU))
+    if opt is not None:
+        with open("seg_result.txt", 'a+') as ww:
+            ww.write("{}, quant: {}, relu: {}, equalize: {}, absorption: {}, correction: {}, clip: {}, distill: {}\n".format(
+                opt.dataset, opt.quantize, opt.relu, opt.equalize, opt.absorption, opt.correction, opt.clip_weight, opt.distill
+            ))
+            ww.write("Acc: {}, Acc_class: {}, mIoU: {}, FWIoU: {}\n\n".format(Acc, Acc_class, mIoU, FWIoU))
 
 
 def decode_seg_map_sequence(label_masks, dataset='pascal'):

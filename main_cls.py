@@ -31,6 +31,8 @@ def get_argument():
     parser.add_argument("--clip_weight", action='store_true')
     parser.add_argument("--trainable", action='store_true')
     parser.add_argument("--true_data", action='store_true')
+    parser.add_argument("--resnet", action='store_true')
+    parser.add_argument("--log", action='store_true')
     parser.add_argument("--bits_weight", type=int, default=8)
     parser.add_argument("--bits_activation", type=int, default=8)
     parser.add_argument("--bits_bias", type=int, default=16)
@@ -62,7 +64,7 @@ def inference_all(model):
             
             num_correct += np.sum(pred == label)
             num_total += image.shape[0]
-            # print(num_correct, num_total, num_correct/num_total)
+            print(num_correct, num_total, num_correct/num_total)
     acc = num_correct / num_total
     return acc
 
@@ -74,7 +76,11 @@ def main():
 
     data = torch.ones((4, 3, 224, 224))#.cuda()
 
-    model = mobilenet_v2('modeling/classification/mobilenetv2_1.0-f2a8633.pth.tar')
+    if args.resnet:
+        import torchvision.models as models
+        model = models.resnet18(pretrained=True)
+    else:
+        model = mobilenet_v2('modeling/classification/mobilenetv2_1.0-f2a8633.pth.tar')
     model.eval()
     
     if args.distill:
@@ -88,7 +94,8 @@ def main():
         bottoms = transformer.log.getBottoms()
     
         if not args.true_data:
-            data_distill = getDistilData(model_original, 'imagenet', args.dis_batch_size, bn_merged=False, num_batch=args.dis_num_batch, gpu=True)
+            data_distill = getDistilData(model_original, 'imagenet', args.dis_batch_size, bn_merged=False,\
+                num_batch=args.dis_num_batch, gpu=True, value_range=[-2.11790393, 2.64], size=[224, 224], early_break_factor=1.2 if args.resnet else 0.5)
         else:
             imagenet_dataset = datasets.ImageFolder('/home/jakc4103/windows/Toshiba/workspace/dataset/ILSVRC/Data/CLS-LOC/train', transforms.Compose([
             transforms.Resize(256),
@@ -105,9 +112,6 @@ def main():
                 image = sample[0]
                 data_distill.append(image)
             del dataloader, imagenet_dataset
-
-        model_original = model_original.cpu()
-        model_original = merge_batchnorm(model_original, graph, bottoms, [nn.Conv2d, nn.Linear])
 
     transformer = TorchTransformer()
     module_dict = {}
@@ -146,12 +150,12 @@ def main():
 
     #create relations
     if args.equalize or args.distill:
-        res = create_relation(graph, bottoms, targ_layer)
+        res = create_relation(graph, bottoms, targ_layer, delete_single=False)
         if args.equalize:
             cross_layer_equalization(graph, res, targ_layer, visualize_state=False, converge_thres=2e-7)
 
-        if args.distill:
-            set_scale(res, graph, bottoms, targ_layer)
+        # if args.distill:
+        #     set_scale(res, graph, bottoms, targ_layer)
     
     if args.absorption:
         bias_absorption(graph, res, bottoms, 3)
@@ -160,10 +164,17 @@ def main():
         clip_weight(graph, range_clip=[-15, 15], targ_type=targ_layer)
 
     if args.correction:
-        if args.distill:
-            bias_correction_distill(model, model_original, data_distill, targ_layer, [nn.Conv2d, nn.Linear])
-        else:
-            bias_correction(graph, bottoms, targ_layer, bits_weight=args.bits_weight)
+        # if args.distill:
+        #     model_original = copy.deepcopy(model.cpu())
+        #     model_original.eval()
+        #     transformer = TorchTransformer()
+        #     transformer.register(targ_layer[0], nn.Conv2d)
+        #     transformer.register(targ_layer[1], nn.Linear)
+        #     model_original = transformer.trans_layers(model_original, update=True)
+
+        #     bias_correction_distill(model, model_original, data_distill, targ_layer, [nn.Conv2d, nn.Linear])
+        # else:
+        bias_correction(graph, bottoms, targ_layer, bits_weight=args.bits_weight)
 
     if args.quantize:
         if not args.trainable and not args.distill:
@@ -171,12 +182,12 @@ def main():
 
         if args.distill:
             set_update_stat(model, [QuantMeasure], True)
-            replace_op()
-            model = update_quant_range(model.cuda(), data_distill)
-            restore_op()
+            model = update_quant_range(model.cuda(), data_distill, graph, bottoms)
             set_update_stat(model, [QuantMeasure], False)
         else:
             set_quant_minmax(graph, bottoms)
+
+        torch.cuda.empty_cache()
 
     # if args.distill:
     #     model = update_scale(model, model_original, data_distill, graph, bottoms, res, targ_layer, num_epoch=1000)
@@ -191,6 +202,12 @@ def main():
     print("Acc: {}".format(acc))
     if args.quantize:
         restore_op()
+    if args.log:
+        with open("cls_result.txt", 'a+') as ww:
+            ww.write("resnet: {}, quant: {}, relu: {}, equalize: {}, absorption: {}, correction: {}, clip: {}, distill: {}\n".format(
+                args.resnet, args.quantize, args.relu, args.equalize, args.absorption, args.correction, args.clip_weight, args.distill
+            ))
+            ww.write("Acc: {}\n\n".format(acc))
 
 
 if __name__ == '__main__':
