@@ -461,19 +461,16 @@ def set_quant_minmax(graph, bottoms, is_detection=False, bn_type=torch.nn.BatchN
                         layer_bias = getattr(obj_layer, 'bias').detach().data
 
                         if layer_type == 'conv':
-                            fake_input = torch.empty((128, layer_weight.size(1), layer_weight.size(2), layer_weight.size(3)))
-                            for idx_tmp in range(fake_input.shape[1]):
-                                nn.init.normal_(fake_input[:, idx_tmp], mean=bias[idx_tmp], std=weight[idx_tmp])
-                            fake_out = torch.nn.functional.conv2d(fake_input, layer_weight, layer_bias, 1, 0, 1, getattr(obj_layer, 'groups'))
-                            
+                            layer_weight = layer_weight.view(layer_weight.size(0), layer_weight.size(1), -1).sum(-1)
+                            layer_weight = layer_weight.view(layer_weight.size(0), layer_weight.size(1), 1, 1)
+                            bias = torch.nn.functional.conv2d(bias.view(1, -1, 1, 1), layer_weight, layer_bias, 1, 0, 1, getattr(obj_layer, 'groups'))
+                            weight = torch.nn.functional.conv2d(weight.view(1, -1, 1, 1), layer_weight, layer_bias, 1, 0, 1, getattr(obj_layer, 'groups'))
                         else:
-                            fake_input = torch.empty((128, layer_weight.size(1)))
-                            for idx_tmp in range(fake_input.shape[1]):
-                                nn.init.normal_(fake_input[:, idx_tmp], mean=bias[idx_tmp], std=weight[idx_tmp])
-                            fake_out = torch.nn.functional.linear(fake_input, layer_weight, layer_bias)
+                            bias = torch.nn.functional.linear(bias.view(1, -1), layer_weight, layer_bias)
+                            weight = torch.nn.functional.linear(weight.view(1, -1), layer_weight, layer_bias)
 
-                        value_max = fake_out.max()
-                        value_min = fake_out.min()
+                        value_max = get_max_value(bias, weight, N)
+                        value_min = get_min_value(bias, weight, N)
 
                     else:
                         value_min = max(0., get_min_value(bias, weight, N)) if 'relu' in relu_attach_list[idx] else get_min_value(bias, weight, N)
