@@ -181,7 +181,7 @@ if __name__ == '__main__':
     if args.distill_range:
         import copy
         # define FP32 model 
-        model_original = create_mobilenetv2_ssd_lite(len(class_names), width_mult=args.mb2_width_mult, is_test=True, quantize=args.quantize)
+        model_original = create_mobilenetv2_ssd_lite(len(class_names), width_mult=args.mb2_width_mult, is_test=True, quantize=False)
         model_original.load(args.trained_model)
         model_original.eval()
         transformer = TorchTransformer()

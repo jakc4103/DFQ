@@ -64,7 +64,7 @@ def inference_all(model):
             
             num_correct += np.sum(pred == label)
             num_total += image.shape[0]
-            print(num_correct, num_total, num_correct/num_total)
+            # print(num_correct, num_total, num_correct/num_total)
     acc = num_correct / num_total
     return acc
 
