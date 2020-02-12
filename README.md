@@ -143,7 +143,7 @@ python main_cls.py --quantize --relu --equalize --correction --distill_range
     Weight_quant(FP32) = Weight_quant(Int8*) = Dequant(Quant(Weight))
   ```
 
-### 16-bits Quantization for Bias
+### 16-bits Quantization for Bias (still 8-bits for weight and activation)
   Somehow I cannot make **Bias-Correction** work on 8-bits bias quantization (even with data dependent correction).  
   I am not sure how the original paper managed to do it with 8 bits quantization, but I guess they either use some non-uniform quantization techniques or use more bits for bias parameters as I do.
 
