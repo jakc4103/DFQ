@@ -130,7 +130,7 @@ python main_cls.py --quantize --relu --equalize --correction --distill_range
 
 export equalized and bias-corrected model to onnx and generage calibration table file:
 ```
-python convert_ncnn.py --equalize --correction --cali out_filename.table --onnx out_filename.onnx
+python convert_ncnn.py --equalize --correction --quantize --relu --ncnn_build path_to_ncnn_build_folder
 ```
 
 ## Note
@@ -159,12 +159,15 @@ python convert_ncnn.py --equalize --correction --cali out_filename.table --onnx 
   I am not sure how the original paper managed to do it with 8 bits quantization, but I guess they either use some non-uniform quantization techniques or use more bits for bias parameters as I do.
 
 ### Int8 inference
-  Refer to [ncnn](https://github.com/Tencent/ncnn) for more details. Basic steps are:  
+  Refer to [ncnn](https://github.com/Tencent/ncnn), [pytorch2ncnn](https://github.com/Tencent/ncnn/wiki/use-ncnn-with-pytorch-or-onnx), [ncnn-quantize](https://github.com/Tencent/ncnn/tree/master/tools/quantize), [ncnn-int8-inference](https://github.com/Tencent/ncnn/wiki/quantized-int8-inference) for more details.  
+  You will need to install/build the followings:  
+  [ncnn](https://github.com/Tencent/ncnn)  
+  [onnx-simplifier](https://github.com/daquexian/onnx-simplifier)  
+  
+  Basic steps are:  
 
-  1. Run convert_ncnn.py to convert pytorch model (with layer equalization or bias correction) to onnx model and generate calibration table file.
-  2. Convert onnx model to ncnn .param and .bin files ([link](https://github.com/Tencent/ncnn/wiki/use-ncnn-with-pytorch-or-onnx)).
-  3. Generate quantize ncnn .param and .bin files ([link](https://github.com/Tencent/ncnn/tree/master/tools/quantize))
-  4. Inference! [link](https://github.com/Tencent/ncnn/wiki/quantized-int8-inference)
+  1. Run convert_ncnn.py to convert pytorch model (with layer equalization or bias correction) to ncnn int8 model and generate calibration table file.
+  2. Inference! [link](https://github.com/Tencent/ncnn/wiki/quantized-int8-inference)
 
 ## TODO
 - [x] cross layer equalization
