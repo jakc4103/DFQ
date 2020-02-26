@@ -34,7 +34,7 @@ def get_argument():
     parser.add_argument("--trainable", action='store_true')
     parser.add_argument("--bits_weight", type=int, default=8)
     parser.add_argument("--bits_activation", type=int, default=8)
-    parser.add_argument("--bits_bias", type=int, default=16)
+    parser.add_argument("--bits_bias", type=int, default=8)
     return parser.parse_args()
 
 def estimate_stats(model, state_dict, data, num_epoch=10, path_save='modeling/data_dependent_QuantConv2dAdd.pth'):

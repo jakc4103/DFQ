@@ -278,6 +278,8 @@ def merge_batchnorm(model, graph, bottoms, targ_type=[QConv2d]):
 
 def quantize_targ_layer(graph, bit_weight=8, bits_bias=16, targ_type=None):
     print("Quantizing Layer parameters")
+    if bits_bias == 32:
+        print("Skipping bias quantization (32 bits)")
     assert targ_type != None, "targ_type cannot be None!"
     for layer_idx in graph:
         if type(graph[layer_idx]) in targ_type:
@@ -287,7 +289,7 @@ def quantize_targ_layer(graph, bit_weight=8, bits_bias=16, targ_type=None):
                 tmp = quantize(param, bit_weight, float(param.min()), float(param.max()))
 
                 graph[layer_idx].weight.data.copy_(tmp.data.cpu())
-                if graph[layer_idx].bias is not None:
+                if graph[layer_idx].bias is not None and bits_bias < 32:
                     param = graph[layer_idx].bias.detach()#.cuda()
                     graph[layer_idx].bias.data.copy_(quantize(param, bits_bias, float(param.min()), float(param.max())).data.cpu())
 

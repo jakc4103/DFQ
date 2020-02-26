@@ -1,101 +1,106 @@
 # DFQ
 PyTorch implementation of [Data Free Quantization Through Weight Equalization and Bias Correction](https://arxiv.org/abs/1906.04721) with some ideas from [ZeroQ: A Novel Zero Shot Quantization Framework](https://arxiv.org/abs/2001.00281).
 
-## Results on classification task
+## Results
+Int8**: Fake quantization; 8 bits weight, 8 bits activation, 16 bits bias  
+Int8*: Fake quantization; 8 bits weight, 8 bits activation, 8 bits bias  
+Int8: Inference using [ncnn](https://github.com/Tencent/ncnn); 8 bits weight, 8 bits activation, 32 bits bias  
+
+### On classification task
 - Tested with [MobileNetV2](https://github.com/tonylins/pytorch-mobilenet-v2) and [ResNet-18](https://pytorch.org/docs/stable/torchvision/models.html)
 - ImageNet validation set (Acc.)
 <table>
 <tr><th>MobileNetV2   </th><th>ResNet-18</th></tr>
 <tr><td>
 
-model/precision | FP32 | Int8*|
------------|------|------|
-Original   | 71.81 | 0.102
-+ReLU | 71.78 | 0.102
-+ReLU+LE | 71.78 | 70.32
-+ReLU+LE +DR | -- | 70.47
-+BC  |  --  | 57.07
-+BC +clip_15  |  --  | 65.37
-+ReLU+LE+BC  |  --  | 70.79
-+ReLU+LE+BC +DR  |  --  | 70.9
+model/precision | FP32 | Int8** | Int8* | Int8
+-----------|------|------| ------ | ------
+Original   | 71.81 | 0.102 | 0.1 | --
++ReLU | 71.78 | 0.102 | 0.096 | --
++ReLU+LE | 71.78 | 70.32 | 68.78 | --
++ReLU+LE +DR | -- | 70.47 | 68.87 | --
++BC  |  --  | 57.07 | 0.12 | --
++BC +clip_15  |  --  | 65.37 | 0.13 | --
++ReLU+LE+BC  |  --  | 70.79 | 68.17 | --
++ReLU+LE+BC +DR  |  --  | 70.9 | 68.41 | --
 
 </td><td>
 
-model/precision | FP32 | Int8*|
------------|------|------|
-Original   | 69.76 | 69.13
-+ReLU | 69.76 | 69.13
-+ReLU+LE | 69.76 | 69.2
-+ReLU+LE +DR | -- | 67.74
-+BC  |  --  | 69.04
-+BC +clip_15  |  --  | 69.04
-+ReLU+LE+BC  |  --  | 69.04
-+ReLU+LE+BC +DR  |  --  | 67.65
+model/precision | FP32 | Int8** | Int8* | Int8
+-----------|------|------|------|------
+Original   | 69.76 | 69.13 | 69.09 | --
++ReLU | 69.76 | 69.13 | 69.09 | --
++ReLU+LE | 69.76 | 69.2 | 69.2 | --
++ReLU+LE +DR | -- | 67.74 | 67.75 | --
++BC  |  --  | 69.04 | 68.56 | --
++BC +clip_15  |  --  | 69.04 | 68.56 | --
++ReLU+LE+BC  |  --  | 69.04 | 68.56 | --
++ReLU+LE+BC +DR  |  --  | 67.65 | 67.62 | --
 
 </td></tr> </table>
 
-## Results on segmentation task
+### On segmentation task
 - Tested with [Deeplab-v3-plus_mobilenetv2](https://github.com/jfzhang95/pytorch-deeplab-xception)  
 <table>
 <tr><th>Pascal VOC 2012 val set (mIOU) </th><th>Pascal VOC 2007 test set (mIOU)</th></tr>
 <tr><td>
 
-model/precision | FP32  | Int8*|
-----------------|-------|-------|
-Original  | 70.81 |  60.03
-+ReLU     | 70.72 |  60.0
-+ReLU+LE  | 70.72 | 66.22
-+ReLU+LE +DR | -- | 67.04
-+ReLU+BC  |  --  |  69.04
-+ReLU+BC +clip_15  |  --  | 66.99
-+ReLU+LE+BC  |  --  | 69.46
-+ReLU+LE+BC +DR  |  --  | 70.12
+model/precision | FP32  | Int8**| Int8*
+----------------|-------|-------|------
+Original  | 70.81 |  60.03 | 59.31
++ReLU     | 70.72 |  60.0 | 58.98
++ReLU+LE  | 70.72 | 66.22 | 66.0
++ReLU+LE +DR | -- | 67.04 | 67.23 
++ReLU+BC  |  --  |  69.04 | 68.42
++ReLU+BC +clip_15  |  --  | 66.99 | 66.39
++ReLU+LE+BC  |  --  | 69.46 | 69.22
++ReLU+LE+BC +DR  |  --  | 70.12 | 69.7
 
 </td><td>
 
-model/precision | FP32  | Int8*  
-----------------|-------|-------  
-Original | 74.54 |  62.36
-+ReLU    | 74.35 |  61.66
-+ReLU+LE  | 74.35 | 69.47
-+ReLU+LE +DR | -- | 70.28
-+BC  |  --  |  72.1
-+BC +clip_15  |  --  | 70.16
-+ReLU+LE+BC  |  --  | 72.84
-+ReLU+LE+BC +DR  |  --  | 73.5
+model/precision | FP32  | Int8** | Int8*
+----------------|-------|-------|-------
+Original | 74.54 |  62.36 | 61.21
++ReLU    | 74.35 |  61.66 | 61.04
++ReLU+LE  | 74.35 | 69.47 | 69.6
++ReLU+LE +DR | -- | 70.28 | 69.93
++BC  |  --  |  72.1 | 70.97
++BC +clip_15  |  --  | 70.16 | 70.76
++ReLU+LE+BC  |  --  | 72.84 | 72.58
++ReLU+LE+BC +DR  |  --  | 73.5 | 73.04
 
 </td></tr> </table>
 
-## Results on detection task  
+### On detection task  
 - Tested with [MobileNetV2 SSD-Lite model](https://github.com/qfgaohao/pytorch-ssd)
 
 <table>
 <tr><th>Pascal VOC 2012 val set (mAP with 12 metric)   </th><th>Pascal VOC 2007 test set (mAP with 07 metric)  </th></tr>
 <tr><td>
 
-model/precision | FP32 | Int8*|
------------|------|------|
-Original   | 70.77 | 70.46
-+ReLU     | 67.49 | 67.22
-+ReLU+LE  | 67.49 | 67.58
-+ReLU+LE +DR | -- | --
-+BC  |  --  |  70.47
-+BC +clip_15  |  --  | 70.71
-+ReLU+LE+BC  |  --  | 68.09
-+ReLU+LE+BC +DR  |  --  | --
+model/precision | FP32 | Int8**|Int8*
+-----------|------|------|------
+Original   | 70.77 | 70.46 | 70.33
++ReLU     | 67.49 | 67.22 | 67.46
++ReLU+LE  | 67.49 | 67.58 | 67.66
++ReLU+LE +DR | -- | -- | --
++BC  |  --  |  70.47 | 70.19
++BC +clip_15  |  --  | 70.71 | 70.39
++ReLU+LE+BC  |  --  | 68.09 | 67.97
++ReLU+LE+BC +DR  |  --  | -- | --
 
 </td><td>
 
-model/precision | FP32  | Int8*  
-----------------|-------|-------  
-Original | 60.69 |  60.54
-+ReLU     | 57.84 | 57.21
-+ReLU+LE  | 57.84 | 57.63
-+ReLU+LE +DR | -- | --
-+BC  |  --  | 60.48
-+BC +clip_15  |  --  | 60.68
-+ReLU+LE+BC  |  --  | 58.09
-+ReLU+LE+BC +DR  |  --  | --
+model/precision | FP32  | Int8** | Int8*
+----------------|-------|-------|-------
+Original | 60.69 |  60.54 | 60.66
++ReLU     | 57.84 | 57.21 | 57.24
++ReLU+LE  | 57.84 | 57.63 | 57.98
++ReLU+LE +DR | -- | -- | --
++BC  |  --  | 60.48 | 60.32
++BC +clip_15  |  --  | 60.68 | 60.37
++ReLU+LE+BC  |  --  | 58.09 | 58.08
++ReLU+LE+BC +DR  |  --  | -- | --
 
 </td></tr> </table>
 
@@ -123,6 +128,11 @@ run the equalized and bias-corrected model with distilled data by:
 python main_cls.py --quantize --relu --equalize --correction --distill_range
 ```
 
+export equalized and bias-corrected model to onnx and generage calibration table file:
+```
+python convert_ncnn.py --equalize --correction --cali out_filename.table --onnx out_filename.onnx
+```
+
 ## Note
 ### Distilled Data (2020/02/03 updated)
   According to recent paper [ZeroQ](https://github.com/amirgholami/ZeroQ), we can distill some fake data to match the statistics from batch-normalization layers, then use it to set the min/max value range of activation quantization.  
@@ -132,7 +142,8 @@ python main_cls.py --quantize --relu --equalize --correction --distill_range
   1. Initialization of distilled data
   2. Early stop criterion
 
-  Also, I think it can be applied to optimizing cross layer equalization and bias correction. The results will be updated as long as I make it to work.  
+  ~~Also, I think it can be applied to optimizing cross layer equalization and bias correction. The results will be updated as long as I make it to work.~~   
+  Using distilled data to do LE or BC did not perform as good as using estimation from batch norm layers, probably because of overfitting.
 
 ### Fake Quantization
   The 'Int8' model in this repo is actually simulation of 8 bits, the actual calculation is done in floating points.  
@@ -144,8 +155,16 @@ python main_cls.py --quantize --relu --equalize --correction --distill_range
   ```
 
 ### 16-bits Quantization for Bias
-  Somehow I cannot make **Bias-Correction** work on 8-bits bias quantization (even with data dependent correction).  
+  Somehow I cannot make **Bias-Correction** work on 8-bits bias quantization for all scenarios (even with data dependent correction).  
   I am not sure how the original paper managed to do it with 8 bits quantization, but I guess they either use some non-uniform quantization techniques or use more bits for bias parameters as I do.
+
+### Int8 inference
+  Refer to [ncnn](https://github.com/Tencent/ncnn) for more details. Basic steps are:  
+
+  1. Run convert_ncnn.py to convert pytorch model (with layer equalization or bias correction) to onnx model and generate calibration table file.
+  2. Convert onnx model to ncnn .param and .bin files ([link](https://github.com/Tencent/ncnn/wiki/use-ncnn-with-pytorch-or-onnx)).
+  3. Generate quantize ncnn .param and .bin files ([link](https://github.com/Tencent/ncnn/tree/master/tools/quantize))
+  4. Inference! [link](https://github.com/Tencent/ncnn/wiki/quantized-int8-inference)
 
 ## TODO
 - [x] cross layer equalization
@@ -154,8 +173,8 @@ python main_cls.py --quantize --relu --equalize --correction --distill_range
 - [x] test with detection model
 - [x] test with classification model
 - [x] use distilled data to set min/max activation range
-- [ ] use distilled data to find optimal scale matrix
-- [ ] use distilled data to do bias correction
+- [ ] ~~use distilled data to find optimal scale matrix~~
+- [ ] ~~use distilled data to do bias correction~~
 - [ ] True Int8 inference
 
 ## Acknowledgment

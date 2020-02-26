@@ -35,7 +35,7 @@ def get_argument():
     parser.add_argument("--log", action='store_true')
     parser.add_argument("--bits_weight", type=int, default=8)
     parser.add_argument("--bits_activation", type=int, default=8)
-    parser.add_argument("--bits_bias", type=int, default=16)
+    parser.add_argument("--bits_bias", type=int, default=8)
     parser.add_argument("--dis_batch_size", type=int, default=64)
     parser.add_argument("--dis_num_batch", type=int, default=8)
     return parser.parse_args()

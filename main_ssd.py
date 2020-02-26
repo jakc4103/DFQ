@@ -51,7 +51,7 @@ parser.add_argument("--trainable", action='store_true')
 parser.add_argument("--equal_range", type=float, default=1e8)
 parser.add_argument("--bits_weight", type=int, default=8)
 parser.add_argument("--bits_activation", type=int, default=8)
-parser.add_argument("--bits_bias", type=int, default=16)
+parser.add_argument("--bits_bias", type=int, default=8)
 args = parser.parse_args()
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() and args.use_cuda else "cpu")
 
