@@ -4,8 +4,7 @@ PyTorch implementation of [Data Free Quantization Through Weight Equalization an
 ## Results
 Int8**: Fake quantization; 8 bits weight, 8 bits activation, 16 bits bias  
 Int8*: Fake quantization; 8 bits weight, 8 bits activation, 8 bits bias  
-Int8': Fake quantization; 8 bits weight(symmetric), 8 bits activation(symmetric), 32 bits bias  
-Int8: Int8 Inference using [ncnn](https://github.com/Tencent/ncnn); 8 bits weight(symmetric), 8 bits activation(symmetric), 32 bits bias  
+Int8: Inference using [ncnn](https://github.com/Tencent/ncnn); 8 bits weight, 8 bits activation, 32 bits bias  
 
 ### On classification task
 - Tested with [MobileNetV2](https://github.com/tonylins/pytorch-mobilenet-v2) and [ResNet-18](https://pytorch.org/docs/stable/torchvision/models.html)
@@ -14,29 +13,29 @@ Int8: Int8 Inference using [ncnn](https://github.com/Tencent/ncnn); 8 bits weigh
 <tr><th>MobileNetV2   </th><th>ResNet-18</th></tr>
 <tr><td>
 
-model/precision | FP32 | Int8** | Int8* | Int8' | Int8<br>(FP32-69.19)
------------|------|------| ------ | ------|------
-Original   | 71.81 | 0.102 | 0.1 | 0.062 | 0.082
-+ReLU | 71.78 | 0.102 | 0.096 | 0.094 | 0.082
-+ReLU+LE | 71.78 | 70.32 | 68.78 | 67.5 | 65.21
-+ReLU+LE +DR | -- | 70.47 | 68.87 | -- | --
-+BC  |  --  | 57.07 | 0.12 | 26.25 | 5.57
-+BC +clip_15  |  --  | 65.37 | 0.13 | 65.96 | 45.13
-+ReLU+LE+BC  |  --  | 70.79 | 68.17 | 68.65 | 62.19
-+ReLU+LE+BC +DR  |  --  | 70.9 | 68.41 | -- | --
+model/precision | FP32 | Int8** | Int8* | Int8
+-----------|------|------| ------ | ------
+Original   | 71.81 | 0.102 | 0.1 | --
++ReLU | 71.78 | 0.102 | 0.096 | --
++ReLU+LE | 71.78 | 70.32 | 68.78 | --
++ReLU+LE +DR | -- | 70.47 | 68.87 | --
++BC  |  --  | 57.07 | 0.12 | --
++BC +clip_15  |  --  | 65.37 | 0.13 | --
++ReLU+LE+BC  |  --  | 70.79 | 68.17 | --
++ReLU+LE+BC +DR  |  --  | 70.9 | 68.41 | --
 
 </td><td>
 
-model/precision | FP32 | Int8** | Int8* 
------------|------|------|------
-Original   | 69.76 | 69.13 | 69.09 
-+ReLU | 69.76 | 69.13 | 69.09 
-+ReLU+LE | 69.76 | 69.2 | 69.2 
-+ReLU+LE +DR | -- | 67.74 | 67.75 
-+BC  |  --  | 69.04 | 68.56 
-+BC +clip_15  |  --  | 69.04 | 68.56 
-+ReLU+LE+BC  |  --  | 69.04 | 68.56 
-+ReLU+LE+BC +DR  |  --  | 67.65 | 67.62
+model/precision | FP32 | Int8** | Int8* | Int8
+-----------|------|------|------|------
+Original   | 69.76 | 69.13 | 69.09 | --
++ReLU | 69.76 | 69.13 | 69.09 | --
++ReLU+LE | 69.76 | 69.2 | 69.2 | --
++ReLU+LE +DR | -- | 67.74 | 67.75 | --
++BC  |  --  | 69.04 | 68.56 | --
++BC +clip_15  |  --  | 69.04 | 68.56 | --
++ReLU+LE+BC  |  --  | 69.04 | 68.56 | --
++ReLU+LE+BC +DR  |  --  | 67.65 | 67.62 | --
 
 </td></tr> </table>
 
@@ -165,24 +164,10 @@ python convert_ncnn.py --equalize --correction --quantize --relu --ncnn_build pa
   [ncnn](https://github.com/Tencent/ncnn)  
   [onnx-simplifier](https://github.com/daquexian/onnx-simplifier)  
   
-  Inference_cls.cpp only implements mobilenetv2. Basic steps are:  
+  Basic steps are:  
 
-  1. Run convert_ncnn.py to convert pytorch model (with layer equalization or bias correction) to ncnn int8 model and generate calibration table file. The name of out_layer will be printed to console.  
-  ```
-    python convert_ncnn.py --quantize --relu --equalize --correction
-  ```
-  
-  2. compile inference_cls.cpp
-  ```
-    mkdir build
-    cd build
-    cmake ..
-    make
-  ```
-  3. Inference! [link](https://github.com/Tencent/ncnn/wiki/quantized-int8-inference)
-  ```
-    ./inference_cls --images=path_to_imagenet_validation_set --param=../modeling/ncnn/model_int8.param --bin=../modeling/ncnn/model_int8.bin --out_layer=name_from_step1
-  ```
+  1. Run convert_ncnn.py to convert pytorch model (with layer equalization or bias correction) to ncnn int8 model and generate calibration table file.
+  2. Inference! [link](https://github.com/Tencent/ncnn/wiki/quantized-int8-inference)
 
 ## TODO
 - [x] cross layer equalization
@@ -193,7 +178,7 @@ python convert_ncnn.py --equalize --correction --quantize --relu --ncnn_build pa
 - [x] use distilled data to set min/max activation range
 - [ ] ~~use distilled data to find optimal scale matrix~~
 - [ ] ~~use distilled data to do bias correction~~
-- [x] True Int8 inference
+- [ ] True Int8 inference
 
 ## Acknowledgment
 - https://github.com/jfzhang95/pytorch-deeplab-xception
