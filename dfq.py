@@ -5,13 +5,13 @@ import numpy as np
 from utils import visualize_per_layer
 from utils.quantize import UniformQuantize
 
-def _quantize_error(param, num_bits=8, reduction='sum'):
+def _quantize_error(param, num_bits=8, reduction='sum', signed=False):
     """!
     reduction should be one of 'sum', 'mean', 'none', 'channel', default to 'sum'
     """
     param = param.detach().clone()
     with torch.no_grad():
-        param_quant = UniformQuantize().apply(param, num_bits, float(param.min()), float(param.max()))
+        param_quant = UniformQuantize().apply(param, num_bits, float(param.min()), float(param.max()), False, signed)
         eps = param_quant - param
         if reduction == 'sum':
             eps = torch.sum(torch.abs(eps))
@@ -167,7 +167,7 @@ def clip_weight(graph, range_clip=[-15, 15], targ_type=[nn.Conv2d, nn.Linear]):
             graph[idx].weight.data.copy_(graph[idx].weight.data.clamp(range_clip[0], range_clip[1]))
 
 
-def bias_correction(graph, bottoms, targ_type, bits_weight=8, bn_type=torch.nn.BatchNorm2d):
+def bias_correction(graph, bottoms, targ_type, bits_weight=8, bn_type=torch.nn.BatchNorm2d, signed=False):
     """
     Perform bias correction.
     Expectation of input activations will be summed for elementwise addition, concate for torch.cat
@@ -212,7 +212,7 @@ def bias_correction(graph, bottoms, targ_type, bits_weight=8, bn_type=torch.nn.B
 
                 weight = getattr(graph[idx_layer], 'weight').detach().clone()
                 # eps = _quantize_error(weight.cuda(), 8, reduction=None).cpu() ## different results on gpu or cpu, move to gpu
-                eps = _quantize_error(weight, 8, reduction=None)
+                eps = _quantize_error(weight, 8, reduction=None, signed=signed)
                 eps = torch.sum(eps.view(weight.size(0), weight.size(1), -1), -1)
 
                 bn_branch = {}
