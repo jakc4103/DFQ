@@ -154,8 +154,8 @@ python convert_ncnn.py --equalize --correction --quantize --relu --ncnn_build pa
     Weight_quant(FP32) = Weight_quant(Int8*) = Dequant(Quant(Weight))
   ```
 
-### 16-bits Quantization for Bias (still 8-bits for weight and activation)
-  Somehow I cannot make **Bias-Correction** work on 8-bits bias quantization (even with data dependent correction).  
+### 16-bits Quantization for Bias
+  Somehow I cannot make **Bias-Correction** work on 8-bits bias quantization for all scenarios (even with data dependent correction).  
   I am not sure how the original paper managed to do it with 8 bits quantization, but I guess they either use some non-uniform quantization techniques or use more bits for bias parameters as I do.
 
 ### Int8 inference
