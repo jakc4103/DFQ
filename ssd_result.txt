@@ -1,0 +1,139 @@
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.7045976880578639
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.6721577880128258
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.675766247677172
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.6809194893796486
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.673511839938487
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+mAP: 0.6753647842907613
+
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.7046551559383605
+
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+mAP: 0.7071029341256537
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: True
+mAP: 0.006714401933834861
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: True
+mAP: 0.006832760388151823
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.6053977555994965
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.5721351987756667
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.5762760911943123
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.5809288617487292
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.574302324217224
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+mAP: 0.5760897945957865
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.6047781622939439
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+mAP: 0.6068407678663141
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: True
+mAP: 0.0149968505638187
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: True
+mAP: 0.009983826200375035
+
+voc12, quant: False, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.7077031080689402
+
+voc12, quant: False, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.67490630025172
+
+voc12, quant: False, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.6749920523629973
+
+voc07, quant: False, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.6069215834978336
+
+voc07, quant: False, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.5784006386652392
+
+voc07, quant: False, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.5783985642501521
+================================================================================================================================
+bias 8 bits
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.703344492676387
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.674555816509433
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.6765804973255842
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.679702082109895
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.674889451820901
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+mAP: 0.6744868823438548
+
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.7018852609583912
+
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+mAP: 0.7039165581583829
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: True
+mAP: 0.0065394331375739825
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: True
+mAP: 0.006866624528332327
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.606585866648581
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.5724223804795333
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+mAP: 0.5798396943323147
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.5807583187126137
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.572589926313104
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+mAP: 0.5729942245379276
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+mAP: 0.603207984788347
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+mAP: 0.6036580620704987
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: True
+mAP: 0.011828582153914866
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: True
+mAP: 0.009626991930617916
+

@@ -1,0 +1,164 @@
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.8888270917442334, Acc_class: 0.6935513054380622, mIoU: 0.6003437775659796, FWIoU: 0.8055981882272437
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.8886715279742685, Acc_class: 0.6926051256236081, mIoU: 0.6000548713108336, FWIoU: 0.8052090579089672
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.9089805406391819, Acc_class: 0.7613694475728396, mIoU: 0.662160948283435, FWIoU: 0.838694080997673
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.918861898862287, Acc_class: 0.7965854694306925, mIoU: 0.6946159312791723, FWIoU: 0.8557063444988405
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.917139764828978, Acc_class: 0.7928690416551222, mIoU: 0.6904178895863311, FWIoU: 0.8529434668784341
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+Acc: 0.910344497216947, Acc_class: 0.7652924046057906, mIoU: 0.669564989738407, FWIoU: 0.8404453753627799
+
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.9162293910852701, Acc_class: 0.7895764217576865, mIoU: 0.6854351647183818, FWIoU: 0.8511565235434594
+
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+Acc: 0.9133399945628977, Acc_class: 0.7757152066353425, mIoU: 0.67639147039647, FWIoU: 0.8457936015869899
+
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.8919346150899016, Acc_class: 0.7148832696661563, mIoU: 0.6133907932118619, FWIoU: 0.8122201552048599
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.890519100552906, Acc_class: 0.7107731280909703, mIoU: 0.609744977814029, FWIoU: 0.8095320185427352
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.9097188359976969, Acc_class: 0.7835921306128326, mIoU: 0.6704137619795312, FWIoU: 0.841871223843486
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.8946954313812413, Acc_class: 0.7127327107291763, mIoU: 0.6235774084245772, FWIoU: 0.8144454994655056
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.892211522190583, Acc_class: 0.7045346935596516, mIoU: 0.6165483168322907, FWIoU: 0.8103650522520598
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.9196782065192355, Acc_class: 0.7860069193315773, mIoU: 0.694738162567347, FWIoU: 0.8557776420472097
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.9294749129308866, Acc_class: 0.8144984200832727, mIoU: 0.7283791096682743, FWIoU: 0.8732321832251229
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.9250850217187393, Acc_class: 0.8095929201598155, mIoU: 0.7184135430999967, FWIoU: 0.8671368831210593
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+Acc: 0.9196082602829723, Acc_class: 0.7820844696812197, mIoU: 0.695817964506698, FWIoU: 0.8566105003148429
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.9267440271398324, Acc_class: 0.8125562419884944, mIoU: 0.7209634952583639, FWIoU: 0.8684368667397083
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+Acc: 0.9221390632776949, Acc_class: 0.79518885829919, mIoU: 0.7015478575497172, FWIoU: 0.8607403129282891
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.8964385647101591, Acc_class: 0.7293284445561645, mIoU: 0.6308326720495698, FWIoU: 0.81851122561071
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.8958341214712316, Acc_class: 0.7236765834383775, mIoU: 0.6256873757012738, FWIoU: 0.8171260952449672
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.9202156860986868, Acc_class: 0.8081229209548093, mIoU: 0.7027882374128259, FWIoU: 0.8579228970762929
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: True
+Acc: 0.9313880146518027, Acc_class: 0.8293308607797039, mIoU: 0.7349690524772365, FWIoU: 0.8777569365022202
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: True
+Acc: 0.9204551826316149, Acc_class: 0.812093245502286, mIoU: 0.7011753290653595, FWIoU: 0.8591662683813177
+
+voc12, quant: False, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.9220721754743927, Acc_class: 0.8218587815804906, mIoU: 0.7080615983323572, FWIoU: 0.8621985667696971
+
+voc12, quant: False, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.9218097325738143, Acc_class: 0.822090029425173, mIoU: 0.7072265161503531, FWIoU: 0.8618474396274414
+
+voc12, quant: False, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.9218096879397191, Acc_class: 0.8220902111594441, mIoU: 0.7072263598021522, FWIoU: 0.8618473595595877
+
+voc07, quant: False, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.9343755752284182, Acc_class: 0.841566231939646, mIoU: 0.7453941701776827, FWIoU: 0.8824672883978751
+
+voc07, quant: False, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.9338581462619481, Acc_class: 0.8420479715965586, mIoU: 0.7434881101161688, FWIoU: 0.8816084296158538
+
+voc07, quant: False, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.9338579153527774, Acc_class: 0.842048825098427, mIoU: 0.7434882288357996, FWIoU: 0.8816081969538299
+=============================================================================================================================
+bias 8 bits
+
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.8876553853730655, Acc_class: 0.678423674973925, mIoU: 0.59314148719177, FWIoU: 0.8018459789080458
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.8868484957791043, Acc_class: 0.6735929361702789, mIoU: 0.5897985631039893, FWIoU: 0.7999894510677927
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.9098681175187607, Acc_class: 0.7486058066372983, mIoU: 0.6600104505896852, FWIoU: 0.8385605075110767
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.9176957103811396, Acc_class: 0.7916142317199082, mIoU: 0.6921579566800161, FWIoU: 0.8531539440068356
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.9148697472769548, Acc_class: 0.790748330249485, mIoU: 0.6842216752653915, FWIoU: 0.8496856080681975
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+Acc: 0.9087097037390729, Acc_class: 0.7570250714008216, mIoU: 0.6638787037726737, FWIoU: 0.8371024162064191
+
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.913858849181939, Acc_class: 0.7896914653721255, mIoU: 0.6811388163451271, FWIoU: 0.8477798134459477
+
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+Acc: 0.9139835289476489, Acc_class: 0.7835091429910997, mIoU: 0.679428820807361, FWIoU: 0.8471605400522559
+
+voc12, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.8893030111533128, Acc_class: 0.6921383236133494, mIoU: 0.5994224308642299, FWIoU: 0.8055768697396456
+
+voc12, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.8882549049606768, Acc_class: 0.6863119793255738, mIoU: 0.5944859022353673, FWIoU: 0.8038437484271839
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.9128960945378702, Acc_class: 0.7708034454003962, mIoU: 0.6723379082776604, FWIoU: 0.8448794232352338
+
+voc12, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: True
+Acc: 0.9182942787045967, Acc_class: 0.8047818400334075, mIoU: 0.6970063851818051, FWIoU: 0.8550032562860085
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.8928705177210666, Acc_class: 0.6967368353224014, mIoU: 0.612071665660022, FWIoU: 0.8097104373499596
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.891279765202319, Acc_class: 0.6936058453768538, mIoU: 0.6103874303376324, FWIoU: 0.806588201059001
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: False
+Acc: 0.920589335621592, Acc_class: 0.7778440232246344, mIoU: 0.6959751785804741, FWIoU: 0.8562834143710911
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.9288468784716953, Acc_class: 0.8093573428887754, mIoU: 0.7258161880066659, FWIoU: 0.8716329193600122
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.9229363156740799, Acc_class: 0.811630113509557, mIoU: 0.7139649503397699, FWIoU: 0.8639430572364156
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+Acc: 0.9185804258373046, Acc_class: 0.7788267971623538, mIoU: 0.6944043141562523, FWIoU: 0.8542503545309998
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: False, distill_range: False
+Acc: 0.921327032694391, Acc_class: 0.8117497660065253, mIoU: 0.709681632643487, FWIoU: 0.8600542987342539
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: True, clip: True, distill_range: False
+Acc: 0.9222626574112627, Acc_class: 0.8002007446789137, mIoU: 0.7075548877333532, FWIoU: 0.8616960467859739
+
+voc07, quant: True, relu: False, equalize: False, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.8953858113164967, Acc_class: 0.7149887512012858, mIoU: 0.6248732225290441, FWIoU: 0.814440652313991
+
+voc07, quant: True, relu: True, equalize: False, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.8929337675913822, Acc_class: 0.7066779419078197, mIoU: 0.6159258862995545, FWIoU: 0.8109478540270026
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: False, clip: False, distill_range: True
+Acc: 0.9204588334553367, Acc_class: 0.7906838963659995, mIoU: 0.6992567942509738, FWIoU: 0.8572523911334615
+
+voc07, quant: True, relu: True, equalize: True, absorption: False, correction: True, clip: False, distill_range: True
+Acc: 0.9297610093932696, Acc_class: 0.8237928224603202, mIoU: 0.7303954320481383, FWIoU: 0.8753331900088974
+
