@@ -51,11 +51,9 @@ class UniformQuantize(InplaceFunction):
             qmax = 2 ** (num_bits - 1) - 1
             max_value = abs(max_value)
             min_value = abs(min_value)
-            if max_value > min_value:
-                scale = max_value / qmax
-            else:
+            if max_value < min_value:
                 max_value = min_value
-                scale = max_value / (qmax + 1)
+            scale = max_value / qmax
 
             min_value = 0.
 
