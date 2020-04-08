@@ -156,6 +156,9 @@ def bias_absorption(graph, relations, bottoms, N=3):
         for g in range(num_group):
             wc[g*step_size_o:(g+1)*step_size_o] = torch.matmul(torch.sum(weight[g*step_size_o:(g+1)*step_size_o], -1), c[g*step_size_i:(g+1)*step_size_i])
 
+        for idx in [layer_first, layer_second]:
+            if graph[idx].bias is None:
+                graph[idx].bias = nn.Parameter(data=torch.zeros((graph[idx].weight.size(0)), dtype=torch.float32), requires_grad=False)
         graph[layer_first].bias.data.add_(-c)
         graph[bn_idx].fake_bias.data.add_(-c)
         graph[layer_second].bias.data.add_(wc)
@@ -284,5 +287,7 @@ def bias_correction(graph, bottoms, targ_type, bits_weight=8, bn_type=torch.nn.B
                     bias[g*step_size_o:(g+1)*step_size_o] = torch.matmul(eps[g*step_size_o:(g+1)*step_size_o], expect[g*step_size_i:(g+1)*step_size_i])
 
                 # bias = torch.matmul(eps, expect)
+                if graph[idx_layer].bias is None:
+                    graph[idx_layer].bias = nn.Parameter(data=torch.zeros((graph[idx_layer].weight.size(0)), dtype=torch.float32), requires_grad=False)
                 graph[idx_layer].bias.add_(-bias)
                 bias_prev = -bias
