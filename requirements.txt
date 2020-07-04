@@ -6,3 +6,4 @@ numpy==1.16.4
 torchvision==0.3.0
 graphviz==0.10.1
 Pillow==6.2.2
+tqdm==4.47.0
