@@ -1,4 +1,5 @@
 import torch
+from tqdm import tqdm
 from modeling.detection.vgg_ssd import create_vgg_ssd, create_vgg_ssd_predictor
 from modeling.detection.mobilenetv1_ssd import create_mobilenetv1_ssd, create_mobilenetv1_ssd_predictor
 from modeling.detection.mobilenetv1_ssd_lite import create_mobilenetv1_ssd_lite, create_mobilenetv1_ssd_lite_predictor
@@ -174,6 +175,7 @@ if __name__ == '__main__':
 
     # timer.start("Load Model")
     net.load(args.trained_model)
+    net = net.eval()
     # net = net.to(DEVICE)
 
     data = torch.ones((4, 3, 300, 300))
@@ -283,7 +285,7 @@ if __name__ == '__main__':
 
     results = []
     print("Start Inference")
-    for i in range(len(dataset)):
+    for i in tqdm(range(len(dataset))):
         # print("process image", i)
         # timer.start("Load Image")
         image = dataset.get_image(i)
